@@ -1,0 +1,11 @@
+mode=local
+
+[cloud]
+api_key = "api key"
+api_url = "https://apifreellm.com/api/v1/chat"
+model_id = "gpt-4o"
+protocol = "openai"
+
+[local]
+api_url = "http://localhost:11434/api/generate"
+model_id = "qwen2.5-coder:3b"
