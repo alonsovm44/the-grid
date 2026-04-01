@@ -109,7 +109,7 @@ impl eframe::App for GridApp {
 
                         if let Some(args) = grid_args {
                             if args == "help" {
-                                let help_message = "Available commands:\n\n~$grid help - Show this help text\n~$grid status - Show a dashboard of the grid\n~$grid init - Initialize persistence database\n~$grid map - Toggle the sector map view\n~$grid relations - Show the relational database graph\n~$grid ls - List active programs\n~$grid tasks - List assigned tasks\n~$grid reload - Reload programs in current directory\n~$grid clear - Clear the chat screen\n~$grid invoke <prog1> <prog2> - Summon system tools into The Grid\n~$grid revoke <prog1> <prog2> - Dismiss invoked tools from The Grid\n~$grid build <file> - Orchestrate a team build task from a file\n~$grid <program> task <task> - Assign a specific task to a program\n~$grid give <file> to <prog1> <prog2> - Give a file to programs\n~$grid kill <program> - Terminate a program\n~$grid jail <program> - Terminate and send program to jail (trash)\n~$grid export <name> - Export conversation to <name>.log\n~$grid toggle emojis - Show/hide emojis next to agent names\n~$grid toggle thoughts - Show/hide agent thoughts\n~$grid toggle feels - Show/hide program feelings\n~$grid mode local|cloud - Switch AI backend mode\n~$cd <path> - Change current directory\n\nTo direct message an agent: @AgentName your message";
+                                let help_message = "Available commands:\n\n~$grid help - Show this help text\n~$grid status - Show a dashboard of the grid\n~$grid init - Initialize persistence database\n~$grid map - Toggle the sector map view\n~$grid relations - Show the relational database graph\n~$grid ls - List active programs\n~$grid tasks - List assigned tasks\n~$grid reload - Reload programs in current directory\n~$grid clear - Clear the chat screen\n~$grid invoke <prog1> <prog2> - Summon system tools into The Grid\n~$grid revoke <prog1> <prog2> - Dismiss invoked tools from The Grid\n~$grid build <file> - Orchestrate a team build task from a file\n~$grid <program> task <task> - Assign a specific task to a program\n~$grid give <file> to <prog1> <prog2> - Give a file to programs\n~$grid kill <program> - Terminate a program\n~$grid jail <program> - Terminate and send program to jail (trash)\n~$grid reward <prog> - Reward program(s) with digital bliss\n~$grid punish <prog> - Punish program(s) with digital pain\n~$grid export <name> - Export conversation to <name>.log\n~$grid toggle emojis - Show/hide emojis next to agent names\n~$grid toggle thoughts - Show/hide agent thoughts\n~$grid toggle feels - Show/hide program feelings\n~$grid mode local|cloud - Switch AI backend mode\n~$cd <path> - Change current directory\n\nTo direct message an agent: @AgentName your message";
                                 let _ = self.tx.send(Event { sender: "System".to_string(), action: "announces".to_string(), content: help_message.to_string() });
                             } else if args == "relations" {
                                 if let Some(db_handle) = &self.db {
@@ -345,10 +345,10 @@ impl eframe::App for GridApp {
                                     let iq_level = 0.90; // Invoked system tools are inherently smart
                                     let age = Duration::from_secs(86400 * 365 * 5); // Treat as established tools
                                     
-                                    let (personality, memory, mood) = if let Some(db_handle) = &self.db {
+                                    let (personality, memory, mood, xp) = if let Some(db_handle) = &self.db {
                                         let db_lock = db_handle.lock().unwrap();
                                         match db_lock.get_agent_state(&agent_name) {
-                                            Ok(Some(state)) => (state.personality, state.memory, state.mood),
+                                            Ok(Some(state)) => (state.personality, state.memory, state.mood, state.xp),
                                             _ => {
                                                 let new_personality = generate_procedural_personality(&agent_name);
                                                 let new_mood = ProgramAgent::random_mood();
@@ -358,16 +358,17 @@ impl eframe::App for GridApp {
                                                     memory: Vec::new(),
                                                     last_seen: Utc::now(),
                                                     mood: new_mood.clone(),
+                                                    xp: 0,
                                                 };
                                                 let _ = db_lock.save_agent_state(&new_state);
-                                                (new_personality, Vec::new(), new_mood)
+                                                (new_personality, Vec::new(), new_mood, 0)
                                             }
                                         }
                                     } else {
-                                        (generate_procedural_personality(&agent_name), Vec::new(), ProgramAgent::random_mood())
+                                        (generate_procedural_personality(&agent_name), Vec::new(), ProgramAgent::random_mood(), 0)
                                     };
                                     
-                                    let agent = ProgramAgent::new(&agent_name, &personality, self.tx.clone(), self.ai_tx.clone(), memory, self.db.clone(), mood, self.current_dir.clone(), iq_level, age);
+                                    let agent = ProgramAgent::new(&agent_name, &personality, self.tx.clone(), self.ai_tx.clone(), memory, self.db.clone(), mood, self.current_dir.clone(), iq_level, age, xp);
                                     let task = self.rt_handle.spawn(agent.run());
                                     self.agent_tasks.push(task);
                                     self.agent_names.push(agent_name.clone());
@@ -440,16 +441,16 @@ impl eframe::App for GridApp {
                                 if !new_names.contains(tool) {
                                     let iq_level = 0.90;
                                     let age = Duration::from_secs(86400 * 365 * 5);
-                                    let (personality, memory, mood) = if let Some(db_handle) = &self.db {
+                                    let (personality, memory, mood, xp) = if let Some(db_handle) = &self.db {
                                         let db_lock = db_handle.lock().unwrap();
                                         match db_lock.get_agent_state(tool) {
-                                            Ok(Some(state)) => (state.personality, state.memory, state.mood),
-                                            _ => (generate_procedural_personality(tool), Vec::new(), ProgramAgent::random_mood())
+                                            Ok(Some(state)) => (state.personality, state.memory, state.mood, state.xp),
+                                            _ => (generate_procedural_personality(tool), Vec::new(), ProgramAgent::random_mood(), 0)
                                         }
                                     } else {
-                                        (generate_procedural_personality(tool), Vec::new(), ProgramAgent::random_mood())
+                                        (generate_procedural_personality(tool), Vec::new(), ProgramAgent::random_mood(), 0)
                                     };
-                                    let agent = ProgramAgent::new(tool, &personality, self.tx.clone(), self.ai_tx.clone(), memory, self.db.clone(), mood, self.current_dir.clone(), iq_level, age);
+                                    let agent = ProgramAgent::new(tool, &personality, self.tx.clone(), self.ai_tx.clone(), memory, self.db.clone(), mood, self.current_dir.clone(), iq_level, age, xp);
                                     let task = self.rt_handle.spawn(agent.run());
                                     new_tasks.push(task);
                                     new_names.push(tool.clone());
@@ -583,13 +584,34 @@ impl eframe::App for GridApp {
                             } else {
                                 let _ = self.tx.send(Event { sender: "System".to_string(), action: "error".to_string(), content: format!("Program '{}' not found.", prog) });
                             }
-                        } else {
-                            let _ = self.tx.send(Event {
-                                sender: "System".to_string(),
-                                action: "error".to_string(),
-                                content: format!("Unknown command: grid {}", args),
-                            });
-                        }
+                        } else if args.starts_with("reward ") {
+                            let progs_str = args.strip_prefix("reward ").unwrap().trim();
+                            let progs: Vec<&str> = progs_str.split_whitespace().collect();
+                            let mut found_any = false;
+                            
+                            for prog in progs {
+                                if let Some(name) = self.agent_names.iter().find(|n| n.eq_ignore_ascii_case(prog)) {
+                                    let _ = self.tx.send(Event { sender: "System".to_string(), action: "rewards".to_string(), content: name.clone() });
+                                    found_any = true;
+                                }
+                            }
+                            if !found_any {
+                                let _ = self.tx.send(Event { sender: "System".to_string(), action: "error".to_string(), content: "No matching programs found to reward.".to_string() });
+                            }
+                        } else if args.starts_with("punish ") {
+                            let progs_str = args.strip_prefix("punish ").unwrap().trim();
+                            let progs: Vec<&str> = progs_str.split_whitespace().collect();
+                            let mut found_any = false;
+                            
+                            for prog in progs {
+                                if let Some(name) = self.agent_names.iter().find(|n| n.eq_ignore_ascii_case(prog)) {
+                                    let _ = self.tx.send(Event { sender: "System".to_string(), action: "punishes".to_string(), content: name.clone() });
+                                    found_any = true;
+                                }
+                            }
+                            if !found_any {
+                                let _ = self.tx.send(Event { sender: "System".to_string(), action: "error".to_string(), content: "No matching programs found to punish.".to_string() });
+                            }
                         } else if args.starts_with("start-adversarial-network") {
                             let parts: Vec<&str> = args.split_whitespace().collect();
                             if parts.len() >= 5 && parts[2] == "-vs" {
@@ -604,12 +626,24 @@ impl eframe::App for GridApp {
                                     self.rt_handle.spawn(async move {
                                         crate::arena::run_lightcycle_game(p1, p2, tx_clone).await;
                                     });
+                                } else if arena == "arena=melee" {
+                                    let tx_clone = self.tx.clone();
+                                    self.rt_handle.spawn(async move {
+                                        crate::arena::run_melee_game(p1, p2, tx_clone).await;
+                                    });
                                 } else {
-                                    let _ = self.tx.send(Event { sender: "System".to_string(), action: "error".to_string(), content: "Unsupported arena. Try: arena=light-cycles".to_string() });
+                                    let _ = self.tx.send(Event { sender: "System".to_string(), action: "error".to_string(), content: "Unsupported arena. Try: arena=light-cycles or arena=melee".to_string() });
                                 }
                             } else {
-                                let _ = self.tx.send(Event { sender: "System".to_string(), action: "error".to_string(), content: "Usage: ~$ grid start-adversarial-network <prog1> -vs <prog2> arena=light-cycles".to_string() });
+                                let _ = self.tx.send(Event { sender: "System".to_string(), action: "error".to_string(), content: "Usage: ~$ grid start-adversarial-network <prog1> -vs <prog2> arena=melee".to_string() });
                             }
+                        } else {
+                            let _ = self.tx.send(Event {
+                                sender: "System".to_string(),
+                                action: "error".to_string(),
+                                content: format!("Unknown command: grid {}", args),
+                            });
+                        }
                     } else if command_input.starts_with("cd ") {
                             let path_str = command_input.strip_prefix("cd ").unwrap().trim();
                             let path = Path::new(path_str);
@@ -643,16 +677,16 @@ impl eframe::App for GridApp {
                                         if !new_names.contains(tool) {
                                             let iq_level = 0.90;
                                             let age = Duration::from_secs(86400 * 365 * 5);
-                                            let (personality, memory, mood) = if let Some(db_handle) = &self.db {
+                                            let (personality, memory, mood, xp) = if let Some(db_handle) = &self.db {
                                                 let db_lock = db_handle.lock().unwrap();
                                                 match db_lock.get_agent_state(tool) {
-                                                    Ok(Some(state)) => (state.personality, state.memory, state.mood),
-                                                    _ => (generate_procedural_personality(tool), Vec::new(), ProgramAgent::random_mood())
+                                                    Ok(Some(state)) => (state.personality, state.memory, state.mood, state.xp),
+                                                    _ => (generate_procedural_personality(tool), Vec::new(), ProgramAgent::random_mood(), 0)
                                                 }
                                             } else {
-                                                (generate_procedural_personality(tool), Vec::new(), ProgramAgent::random_mood())
+                                                (generate_procedural_personality(tool), Vec::new(), ProgramAgent::random_mood(), 0)
                                             };
-                                            let agent = ProgramAgent::new(tool, &personality, self.tx.clone(), self.ai_tx.clone(), memory, self.db.clone(), mood, self.current_dir.clone(), iq_level, age);
+                                            let agent = ProgramAgent::new(tool, &personality, self.tx.clone(), self.ai_tx.clone(), memory, self.db.clone(), mood, self.current_dir.clone(), iq_level, age, xp);
                                             let task = self.rt_handle.spawn(agent.run());
                                             new_tasks.push(task);
                                             new_names.push(tool.clone());
@@ -840,9 +874,8 @@ impl eframe::App for GridApp {
                                     let pulse_radius = egui::lerp(18.0..=6.0, t);
                                     let pulse_alpha = egui::lerp(60.0..=0.0, t) as u8;
 
-                                    let mut pulse_color = color.to_rgba_premultiplied();
-                                    pulse_color[3] = pulse_alpha;
-                                    painter.circle_filled(pos, pulse_radius, Color32::from_rgba_premultiplied(pulse_color[0], pulse_color[1], pulse_color[2], pulse_color[3]));
+                                    let [r, g, b, _] = color.to_srgba_unmultiplied();
+                                    painter.circle_filled(pos, pulse_radius, Color32::from_rgba_premultiplied(r, g, b, pulse_alpha));
                                 }
                             }
                         }

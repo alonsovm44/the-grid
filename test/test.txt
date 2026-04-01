@@ -1,4 +1,0 @@
-Make a calculator program that
-takes two numbers and adds them
-
-compile it with static linking

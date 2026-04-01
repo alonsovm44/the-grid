@@ -71,6 +71,9 @@ pub struct AutonomousAction {
     pub file_name: Option<String>,
     pub dir_path: Option<String>,
     pub url: Option<String>,
+    pub move_type: Option<String>,
+    pub target_subsystem: Option<String>,
+    pub dialogue: Option<String>,
     pub relationship_updates: Option<Vec<RelationshipUpdate>>,
 }
 
@@ -295,6 +298,15 @@ pub async fn run_ai_engine(
                                                         let _ = tx_for_ai.send(Event { sender: request.agent_name.clone(), action: "plays_move".to_string(), content: dir });
                                                     }
                                                 },
+                                            "melee_move" => {
+                                                if let (Some(m_type), Some(target), Some(dialogue)) = (action.move_type, action.target_subsystem, action.dialogue) {
+                                                    let _ = tx_for_ai.send(Event {
+                                                        sender: request.agent_name.clone(),
+                                                        action: "plays_melee_move".to_string(),
+                                                        content: format!("{}|{}|{}", m_type, target, dialogue)
+                                                    });
+                                                }
+                                            },
                                                 _ => {}
                                             }
                                             // Also process any relationship updates

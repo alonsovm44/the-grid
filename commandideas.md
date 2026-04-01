@@ -23,10 +23,28 @@ grid revoke-title <program <title> # revokes a title from a program
 
 grid <program> task ["task" |  --spec=<pathtospec>] [DONE] # assigns a specific task to a program, either a textual description or a path to a spec file
 
+grid run bin/LLLaserControl -ok 1 --target="Userfile@username" # Digitizes an external user into The Grid from a profile URL.
+# IDEAS:
+# - Fetches a GitHub or social media profile URL using `reqwest`.
+# - Uses an LLM to analyze the profile's bio, top languages, repos, and commit message tone.
+# - Generates a custom personality prompt and stats (IQ, formality, mood) based on the profile data.
+# - Spawns a new autonomous agent named after the profile handle (e.g., "torvalds") that acts as a digital clone interacting with the other programs.
+#proposed workflow
+    # fetch url with user data,
+    # feed it to an LLM
+    # ask LLM t make Userfile@username blueprint
+    # parse Userfile and produce binary 
 
-```
+grid run bin/LLLaserControl -ok 1 --dna="<path_to_fasta_or_id>" # Synthesizes a program directly from raw biological DNA!
+# IDEAS (DNA -> .exe):
+# - Parses a local `.fasta` file or fetches from a public genome database (like NCBI).
+# - Calculates biological metrics: GC-content dictates the program's emotional stability/formality (high GC = rigid, low GC = volatile).
+# - Sequence length dictates IQ and memory allocation.
+# - Feeds these biological stats to the LLM to generate a unique, biologically-seeded digital entity.
+# - Result: A living `.exe` whose behavior is fundamentally dictated by real-world genetic code.
 
 ## Userfile Template
+```
 
 ```yaml
 

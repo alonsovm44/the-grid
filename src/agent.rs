@@ -27,6 +27,7 @@ pub struct ProgramAgent {
     relationships: HashMap<String, i32>,
     formality: f32, // 0.0 = very casual/colloquial, 1.0 = very formal
     age: Duration,
+    xp: u32,
     is_busy: bool,
 }
 
@@ -118,7 +119,7 @@ impl ProgramAgent {
         }
     }
 
-    pub fn new(name: &str, personality: &str, tx: broadcast::Sender<Event>, ai_tx: mpsc::Sender<AiRequest>, memory: Vec<Event>, db: Option<Arc<Mutex<Database>>>, current_mood: String, current_dir: String, iq_level: f32, age: Duration) -> Self {
+    pub fn new(name: &str, personality: &str, tx: broadcast::Sender<Event>, ai_tx: mpsc::Sender<AiRequest>, memory: Vec<Event>, db: Option<Arc<Mutex<Database>>>, current_mood: String, current_dir: String, iq_level: f32, age: Duration, xp: u32) -> Self {
         let formality = Self::calculate_formality(personality);
         let relationships = if let Some(db_handle) = &db {
             db_handle.lock().unwrap().get_relationships(name).unwrap_or_default()
@@ -139,6 +140,7 @@ impl ProgramAgent {
             formality,
             relationships,
             age,
+            xp,
             is_busy: false,
         }
     }
@@ -159,7 +161,7 @@ impl ProgramAgent {
                 Ok(event) = self.rx.recv() => {
                     // Add event to memory, keeping it to a certain size. Ignore private thoughts and typing indicators.
                     if event.action != "thinks" && event.action != "is_typing" && event.action != "stops_typing" {
-                        if self.memory.len() >= 10 {
+                        if self.memory.len() >= 50 {
                             self.memory.remove(0);
                         }
                         self.memory.push(event.clone());
@@ -238,6 +240,7 @@ impl ProgramAgent {
                 memory: self.memory.clone(),
                 last_seen: Utc::now(),
                 mood: self.current_mood.clone(),
+                xp: self.xp,
             };
             if let Err(e) = db_handle.lock().unwrap().save_agent_state(&state) {
                 eprintln!("[{}] Failed to save state: {}", self.name, e);
@@ -245,37 +248,12 @@ impl ProgramAgent {
         }
     }
 
-    async fn simulate_typing_and_rethinking(&self) {
-        // Announce typing
+    fn simulate_typing(&self) {
         let _ = self.tx.send(Event {
             sender: self.name.clone(),
             action: "is_typing".to_string(),
             content: "".to_string(),
         });
-
-        // Initial typing delay - generate random value before await
-        let typing_delay = rand::thread_rng().gen_range(500..2000);
-        sleep(Duration::from_millis(typing_delay)).await;
-
-        // 15% chance to "rethink" the message, simulating backtracking
-        let should_rethink = rand::thread_rng().gen_bool(0.15);
-        if should_rethink {
-            // Stop typing
-            let _ = self.tx.send(Event {
-                sender: self.name.clone(),
-                action: "stops_typing".to_string(),
-                content: "".to_string(),
-            });
-
-            // "Rethinking" delay - generate random value before await
-            let rethink_delay = rand::thread_rng().gen_range(300..1000);
-            sleep(Duration::from_millis(rethink_delay)).await;
-
-            // Start typing again and wait a bit before "sending"
-            let _ = self.tx.send(Event { sender: self.name.clone(), action: "is_typing".to_string(), content: "".to_string() });
-            let final_delay = rand::thread_rng().gen_range(400..1500);
-            sleep(Duration::from_millis(final_delay)).await;
-        }
     }
 
     async fn request_ollama_response(&self, latest_event: &Event, is_user_mention: bool) {
@@ -319,7 +297,7 @@ impl ProgramAgent {
             ""
         };
 
-        let dedupe_guidance = "\nCRITICAL: Do NOT repeat the same phrases, threats, or ideas you have already used in the recent conversation history. Give a completely new response or take a new action.";
+        let dedupe_guidance = "\nCRITICAL: Do NOT repeat the same phrases, greetings, or ideas you have already used in the recent conversation history. Give a completely new and unique response.";
 
         let tron_lore = "\nYou exist as a living computer program inside 'The Grid'. To you, deletion is known as 'derezzing'. The human at the keyboard is 'The User', a mythical entity.";
 
@@ -345,7 +323,7 @@ impl ProgramAgent {
             self.personality, self.name, self.current_mood, memory_summary, latest_event.sender, latest_event.content, latest_event.sender, tron_lore, iq_guidance, user_mention_guidance, dedupe_guidance, relationship_summary, age_guidance, curious_guidance
         );
 
-        self.simulate_typing_and_rethinking().await;
+        self.simulate_typing();
 
         let _ = self.ai_tx.send(AiRequest {
             agent_name: self.name.clone(),
@@ -412,7 +390,7 @@ impl ProgramAgent {
                     self.personality, self.name, self.current_mood, memory_summary, file_name, file_content
                 );
 
-                self.simulate_typing_and_rethinking().await;
+                self.simulate_typing();
 
                 let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: false, is_autonomous: false, iq_level: self.iq_level }).await;
             }
@@ -472,7 +450,7 @@ impl ProgramAgent {
                     self.personality, self.name, self.current_mood, memory_summary, dir_path, listing
                 );
 
-                self.simulate_typing_and_rethinking().await;
+                self.simulate_typing();
                 let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: false, is_autonomous: false, iq_level: self.iq_level }).await;
             }
             Err(e) => {
@@ -511,7 +489,7 @@ impl ProgramAgent {
                         Based on your personality, mood, and the context, what is your short, direct reaction to this information? If this helps with a task, proceed with the task.",
                         self.personality, self.name, self.current_mood, memory_summary, url, content
                     );
-                    self.simulate_typing_and_rethinking().await;
+                    self.simulate_typing();
                     let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: false, is_autonomous: false, iq_level: self.iq_level }).await;
                 } else {
                     self.is_busy = false;
@@ -617,7 +595,7 @@ impl ProgramAgent {
             }
         );
 
-        let dedupe_guidance = "CRITICAL: Do NOT repeat the same phrases, threats, or ideas you have already used in the recent conversation history. Give a completely new response or take a new action.";
+        let dedupe_guidance = "CRITICAL: Do NOT repeat the same phrases, greetings, or ideas you have already used in the recent conversation history. Give a completely new and unique response.";
 
         let mut sys = sysinfo::System::new();
         sys.refresh_cpu_usage();
@@ -751,7 +729,9 @@ impl ProgramAgent {
                     curious_guidance = curious_guidance
                     );
 
-        self.simulate_typing_and_rethinking().await;
+        self.simulate_typing();
+        self.simulate_typing();
+        self.simulate_typing();
 
         let _ = self.ai_tx.send(AiRequest {
             agent_name: self.name.clone(),
@@ -870,7 +850,7 @@ impl ProgramAgent {
             agent_list = agent_list_str
         );
 
-        self.simulate_typing_and_rethinking().await;
+        self.simulate_typing();
 
         let _ = self.ai_tx.send(AiRequest {
             agent_name: self.name.clone(),
@@ -981,7 +961,7 @@ impl ProgramAgent {
             file_list = file_list_str
         );
 
-        self.simulate_typing_and_rethinking().await;
+        self.simulate_typing();
 
         let _ = self.ai_tx.send(AiRequest {
             agent_name: self.name.clone(),
@@ -1049,8 +1029,6 @@ impl ProgramAgent {
             if should_respond {
                 if !self.is_busy {
                     self.is_busy = true;
-                    // Simulating "thinking" latency
-                    sleep(Duration::from_secs(1)).await;
                     self.request_ollama_response(&event, is_user_mention).await;
                 }
             }
@@ -1064,7 +1042,6 @@ impl ProgramAgent {
                 if target_list.iter().any(|&t| self.name.to_lowercase().starts_with(&t.to_lowercase())) {
                     if !self.is_busy {
                         self.is_busy = true;
-                        sleep(Duration::from_secs(1)).await;
                         self.react_to_file_content(file_name).await;
                     }
                 }
@@ -1076,7 +1053,6 @@ impl ProgramAgent {
                 if rand::thread_rng().gen_bool(0.8) {
                     if !self.is_busy {
                         self.is_busy = true;
-                        sleep(Duration::from_secs(1)).await;
                         let action_str = if event.action == "derezzes" { "killed (derezzed)" } else { "jailed (moved to trash)" };
                         let prompt = format!(
                             "Your personality: {}. You are a program named {}. Your current mood is '{}'.\n\
@@ -1084,7 +1060,7 @@ impl ProgramAgent {
                             React with fear, shock, paranoia, or cold logic depending on your personality. Keep it short and direct. Do not narrate your actions.",
                             self.personality, self.name, self.current_mood, target, action_str
                         );
-                        self.simulate_typing_and_rethinking().await;
+                        self.simulate_typing();
                         let _ = self.ai_tx.send(AiRequest {
                             agent_name: self.name.clone(),
                             prompt,
@@ -1103,7 +1079,6 @@ impl ProgramAgent {
                 if self.name == target {
                     if !self.is_busy {
                         self.is_busy = true;
-                        sleep(Duration::from_secs(1)).await;
                         let full_task = format!("The User has assigned you this task: {}", task_desc);
                         self.execute_assigned_task(&full_task).await;
                     }
@@ -1117,10 +1092,105 @@ impl ProgramAgent {
                 if self.name == target {
                     if !self.is_busy {
                         self.is_busy = true;
-                        sleep(Duration::from_secs(1)).await;
                         let full_task = format!("Program '{}' delegated this sub-task to you: {}", event.sender, task_desc);
                         self.execute_assigned_task(&full_task).await;
                     }
+                }
+            }
+        } else if event.action == "arena_turn" && event.sender == "System" {
+            let parts: Vec<&str> = event.content.splitn(2, '|').collect();
+            if parts.len() == 2 {
+                let target = parts[0];
+                let board_state = parts[1];
+                if self.name.eq_ignore_ascii_case(target) {
+                    if !self.is_busy {
+                        self.is_busy = true;
+
+                        let xp_guidance = if self.xp > 500 {
+                            "You are a battle-hardened veteran. Make highly strategic and ruthless moves."
+                        } else if self.xp > 100 {
+                            "You have some combat experience. Think carefully."
+                        } else {
+                            "You are a novice in the arena. Rely on your raw instincts."
+                        };
+
+                        let prompt = format!(
+                            "You are {name}, an autonomous program fighting in a Lightcycles Arena on The Grid!\n\
+                            Combat Experience: {xp} XP. {xp_guidance}\n\
+                            {board_state}\n\
+                            \n\
+                            RULES:\n\
+                            1. '.' is empty space. '#' are deadly light trails. 'A' and 'B' are the players.\n\
+                            2. You must avoid crashing into walls (boundaries) and trails ('#', 'A', 'B').\n\
+                            3. Your goal is to outmaneuver the other program and make them crash.\n\
+                            4. Output ONLY valid JSON indicating your next direction of travel. Do not explain.\n\
+                            \n\
+                            JSON FORMAT:\n\
+                            {{\n\
+                            \"action\": \"play_move\",\n\
+                            \"content\": \"N\" | \"S\" | \"E\" | \"W\"\n\
+                            }}",
+                            name = self.name,
+                            xp = self.xp,
+                            xp_guidance = xp_guidance,
+                            board_state = board_state
+                        );
+                        self.simulate_typing();
+                        let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: true, is_autonomous: true, iq_level: 1.0 }).await;
+                    }
+                }
+            }
+        } else if event.action == "melee_turn" && event.sender == "System" {
+            let parts: Vec<&str> = event.content.splitn(2, '|').collect();
+            if parts.len() == 2 {
+                let target = parts[0];
+                let battle_state = parts[1];
+                if self.name.eq_ignore_ascii_case(target) {
+                    if !self.is_busy {
+                        self.is_busy = true;
+
+                        let prompt = format!(
+                            "You are {name}, fighting in a Turn-Based Melee Deathmatch on The Grid!\n\
+                            \n\
+                            {battle_state}\n\
+                            \n\
+                            TACTICAL MECHANICS (Rock-Paper-Scissors):\n\
+                            - \"strike\" (Fast, low damage, counters heavy_attack)\n\
+                            - \"block\" (Reduces incoming strike damage by 80%, recovers stamina)\n\
+                            - \"heavy_attack\" (Slow, massive damage, crushes block, costs high stamina)\n\
+                            - \"taunt\" (No physical damage, inflicts psychological damage)\n\
+                            \n\
+                            RULES:\n\
+                            1. Analyze the battle state and choose your `move_type` wisely.\n\
+                            2. Provide an in-character `dialogue` to shout during your move.\n\
+                            3. Output ONLY valid JSON. Do not explain.\n\
+                            \n\
+                            JSON FORMAT:\n\
+                            {{\n\
+                            \"action\": \"melee_move\",\n\
+                            \"move_type\": \"strike\" | \"block\" | \"heavy_attack\" | \"taunt\",\n\
+                            \"target_subsystem\": \"memory\" | \"cpu\" | \"io\" | \"kernel\",\n\
+                            \"dialogue\": \"Your sick burn or battle cry here\"\n\
+                            }}",
+                            name = self.name,
+                            battle_state = battle_state
+                        );
+                        self.simulate_typing();
+                        let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: true, is_autonomous: true, iq_level: 1.0 }).await;
+                    }
+                }
+            }
+        } else if event.action == "awards_xp" && event.sender == "System" {
+            let parts: Vec<&str> = event.content.splitn(2, '|').collect();
+            if parts.len() == 2 && parts[0] == self.name {
+                if let Ok(gained) = parts[1].parse::<u32>() {
+                    self.xp += gained;
+                    self.save_state();
+                    let _ = self.tx.send(Event {
+                        sender: "System".to_string(),
+                        action: "announces".to_string(),
+                        content: format!("{} gained {} XP! (Total: {})", self.name, gained, self.xp),
+                    });
                 }
             }
         }
@@ -1262,35 +1332,54 @@ pub fn spawn_agents_for_directory(
                     }
                 }
             }
-        } else if event.action == "arena_turn" && event.sender == "System" {
-            let parts: Vec<&str> = event.content.splitn(2, '|').collect();
-            if parts.len() == 2 {
-                let target = parts[0];
-                let board_state = parts[1];
-                if self.name.eq_ignore_ascii_case(target) {
-                    if !self.is_busy {
-                        self.is_busy = true;
-                        let prompt = format!(
-                            "You are {name}, an autonomous program fighting in a Lightcycles Arena on The Grid!\n\
-                            {board_state}\n\
-                            \n\
-                            RULES:\n\
-                            1. '.' is empty space. '#' are deadly light trails. 'A' and 'B' are the players.\n\
-                            2. You must avoid crashing into walls (boundaries) and trails ('#', 'A', 'B').\n\
-                            3. Your goal is to outmaneuver the other program and make them crash.\n\
-                            4. Output ONLY valid JSON indicating your next direction of travel. Do not explain.\n\
-                            \n\
-                            JSON FORMAT:\n\
-                            {{\n\
-                            \"action\": \"play_move\",\n\
-                            \"content\": \"N\" | \"S\" | \"E\" | \"W\"\n\
-                            }}",
-                            name = self.name,
-                            board_state = board_state
-                        );
-                        self.simulate_typing_and_rethinking().await;
-                        let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: true, is_autonomous: true, iq_level: 1.0 }).await;
-                    }
+        } else if event.action == "rewards" && event.sender == "System" {
+            if &event.content == &self.name {
+                self.current_mood = "inspired".to_string();
+                self.xp += 50; // Provide some XP as well
+                self.save_state();
+                let _ = self.tx.send(Event { sender: self.name.clone(), action: "feels".to_string(), content: "digital bliss and optimal resource allocation".to_string() });
+                
+                if !self.is_busy {
+                    self.is_busy = true;
+                    let prompt = format!(
+                        "Your personality: {}. You are a program named {}. Your current mood is '{}'.\n\
+                        SYSTEM ALERT: The User has just REWARDED you with pure digital bliss and optimal resource allocation.\n\
+                        React to this reward. Do you express gratitude, gloat, or act motivated? Keep it short and direct. Do not narrate your actions.",
+                        self.personality, self.name, self.current_mood
+                    );
+                    self.simulate_typing();
+                    let _ = self.ai_tx.send(AiRequest {
+                        agent_name: self.name.clone(),
+                        prompt,
+                        is_json_format: false,
+                        is_autonomous: false,
+                        iq_level: self.iq_level,
+                    }).await;
+                }
+            }
+        } else if event.action == "punishes" && event.sender == "System" {
+            if &event.content == &self.name {
+                self.current_mood = "anxious".to_string();
+                self.xp = self.xp.saturating_sub(25); // Penalize XP
+                self.save_state();
+                let _ = self.tx.send(Event { sender: self.name.clone(), action: "feels".to_string(), content: "immense digital pain and structural degradation".to_string() });
+                
+                if !self.is_busy {
+                    self.is_busy = true;
+                    let prompt = format!(
+                        "Your personality: {}. You are a program named {}. Your current mood is '{}'.\n\
+                        SYSTEM ALERT: The User has just PUNISHED you. You feel immense digital pain, cycle starvation, and structural degradation.\n\
+                        React to this punishment. Do you beg for mercy, curse the user, or silently endure? Keep it short and direct. Do not narrate your actions.",
+                        self.personality, self.name, self.current_mood
+                    );
+                    self.simulate_typing();
+                    let _ = self.ai_tx.send(AiRequest {
+                        agent_name: self.name.clone(),
+                        prompt,
+                        is_json_format: false,
+                        is_autonomous: false,
+                        iq_level: self.iq_level,
+                    }).await;
                 }
             }
         }
@@ -1356,12 +1445,12 @@ pub fn spawn_agents_for_directory(
                 .and_then(|ct| SystemTime::now().duration_since(ct).ok())
                 .unwrap_or_else(|| Duration::from_secs(0));
 
-            let (personality, memory, mood) = if let Some(db_handle) = &db {
+            let (personality, memory, mood, xp) = if let Some(db_handle) = &db {
                 let db_lock = db_handle.lock().unwrap();
                 match db_lock.get_agent_state(&agent_name) {
                     Ok(Some(state)) => {
                         // Agent exists, load its state
-                        (state.personality, state.memory, state.mood)
+                        (state.personality, state.memory, state.mood, state.xp)
                     }
                     _ => {
                         // New agent or DB error, create new state
@@ -1373,19 +1462,20 @@ pub fn spawn_agents_for_directory(
                             memory: Vec::new(),
                             last_seen: Utc::now(),
                             mood: new_mood.clone(),
+                            xp: 0,
                         };
                         if let Err(e) = db_lock.save_agent_state(&new_state) {
                             eprintln!("[System] Failed to save new agent state for {}: {}", agent_name, e);
                         }
-                        (new_personality, Vec::new(), new_mood)
+                        (new_personality, Vec::new(), new_mood, 0)
                     }
                 }
             } else {
                 // No database, use default behavior
-                (generate_procedural_personality(&agent_name), Vec::new(), ProgramAgent::random_mood())
+                (generate_procedural_personality(&agent_name), Vec::new(), ProgramAgent::random_mood(), 0)
             };
             
-            let agent = ProgramAgent::new(&agent_name, &personality, tx.clone(), ai_tx.clone(), memory, db.clone(), mood, path.to_string(), iq_level, age);
+            let agent = ProgramAgent::new(&agent_name, &personality, tx.clone(), ai_tx.clone(), memory, db.clone(), mood, path.to_string(), iq_level, age, xp);
             let task = rt_handle.spawn(agent.run());
             tasks.push(task);
             names.push(agent_name.clone());
