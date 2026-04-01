@@ -14,12 +14,13 @@ mod agent;
 mod ai_provider;
 mod config;
 mod database; 
+mod arena;
 
 pub use event::Event;
 pub use agent::{generate_procedural_personality, spawn_agents_for_directory, ProgramAgent};
 use ai_provider::{run_ai_engine, AiRequest};
 use config::Config;
-use database::{AgentState, Database};
+use database::Database;
 use app::GridApp;
 
 
@@ -65,10 +66,13 @@ fn main() -> eframe::Result<()> {
         Box::new(move |cc| { // This move takes ownership of variables from main
             let ctx = cc.egui_ctx.clone();
 
-            // Apply a dark, Tron-style theme
+            // Apply a 90s Solaris Terminal retro theme
             let mut visuals = Visuals::dark();
-            visuals.panel_fill = Color32::from_rgb(10, 10, 15); // Deep dark background
-            visuals.window_fill = Color32::from_rgb(10, 10, 15);
+            visuals.panel_fill = Color32::from_rgb(0, 0, 0); // Pure black background
+            visuals.window_fill = Color32::from_rgb(0, 0, 0);
+            visuals.faint_bg_color = Color32::from_rgb(20, 20, 20);
+            visuals.extreme_bg_color = Color32::from_rgb(10, 10, 10);
+            visuals.override_text_color = Some(Color32::from_rgb(170, 170, 170)); // Classic light gray text
             
             // Sharp edges for a digital, terminal look
             let rounding = Rounding::same(0.0);
@@ -84,9 +88,9 @@ fn main() -> eframe::Result<()> {
 
             // Force a Monospace font for the entire UI
             let mut style = (*ctx.style()).clone();
-            style.text_styles.insert(TextStyle::Body, FontId::new(14.0, FontFamily::Monospace));
-            style.text_styles.insert(TextStyle::Button, FontId::new(14.0, FontFamily::Monospace));
-            style.text_styles.insert(TextStyle::Heading, FontId::new(16.0, FontFamily::Monospace));
+            style.text_styles.insert(TextStyle::Body, FontId::new(16.0, FontFamily::Monospace));
+            style.text_styles.insert(TextStyle::Button, FontId::new(16.0, FontFamily::Monospace));
+            style.text_styles.insert(TextStyle::Heading, FontId::new(18.0, FontFamily::Monospace));
             ctx.set_style(style);
 
             // Background listener task: Reads from the broadcast channel and wakes up the UI
@@ -139,15 +143,15 @@ fn main() -> eframe::Result<()> {
 
             let user_name = whoami::username();
 
-            // A nice palette of colors for the agents
+            // A palette of classic 90s terminal colors for the agents
             let color_palette = vec![
-                Color32::from_rgb(139, 233, 253), // Cyan
-                Color32::from_rgb(80, 250, 123),  // Green
-                Color32::from_rgb(255, 184, 108), // Orange
-                Color32::from_rgb(255, 121, 198), // Pink
-                Color32::from_rgb(189, 147, 249), // Purple
-                Color32::from_rgb(241, 250, 140), // Yellow-ish
-                Color32::from_rgb(255, 85, 85),   // Red
+                Color32::from_rgb(0, 255, 0),     // Terminal Green
+                Color32::from_rgb(0, 255, 255),   // Terminal Cyan
+                Color32::from_rgb(255, 170, 0),   // Amber / Orange
+                Color32::from_rgb(255, 0, 255),   // Magenta
+                Color32::from_rgb(255, 255, 85),  // Bright Yellow
+                Color32::from_rgb(255, 85, 85),   // Bright Red
+                Color32::from_rgb(170, 170, 255), // Light Blue
             ];
 
             // A palette of emojis for the agents
@@ -176,6 +180,7 @@ fn main() -> eframe::Result<()> {
                 invoked_tools: HashSet::new(),
                 rel_cache: HashMap::new(),
                 last_rel_update: Instant::now(),
+                last_active_agent: None,
             })
         }),
     )

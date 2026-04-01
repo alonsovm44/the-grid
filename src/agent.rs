@@ -377,7 +377,7 @@ impl ProgramAgent {
             .collect::<Vec<_>>().join("\n");
 
         match std::fs::File::open(&file_path) {
-            Ok(mut file) => {
+            Ok(file) => {
                 let mut buffer = String::new();
                 // Read up to 4096 bytes to keep prompts reasonable
                 if let Err(e) = file.take(4096).read_to_string(&mut buffer) {
@@ -620,17 +620,30 @@ impl ProgramAgent {
         let dedupe_guidance = "CRITICAL: Do NOT repeat the same phrases, threats, or ideas you have already used in the recent conversation history. Give a completely new response or take a new action.";
 
         let mut sys = sysinfo::System::new();
+        sys.refresh_cpu_usage();
+        
+        // Brief yield to establish an accurate CPU usage baseline
+        sleep(Duration::from_millis(200)).await;
+        sys.refresh_cpu_usage();
         sys.refresh_memory();
+        
+        let cpus = sys.cpus();
+        let cpu_usage = if !cpus.is_empty() {
+            cpus.iter().map(|c| c.cpu_usage()).sum::<f32>() / cpus.len() as f32
+        } else {
+            0.0
+        };
+
         let total_mem = sys.total_memory() / (1024 * 1024);
         let used_mem = sys.used_memory() / (1024 * 1024);
         let mem_percent = if total_mem > 0 { (used_mem as f32 / total_mem as f32) * 100.0 } else { 0.0 };
 
-        let resource_guidance = if mem_percent > 85.0 || lag > 2.0 {
-            format!("SYSTEM STATUS: CRITICAL. RAM: {:.1}%, Event Loop Lag: {:.1}s. You are lagging heavily! You MUST complain about the lack of resources or high lag!", mem_percent, lag)
-        } else if mem_percent > 65.0 || lag > 0.5 {
-            format!("SYSTEM STATUS: Under load. RAM: {:.1}%, Lag: {:.1}s. You feel a bit sluggish or constrained.", mem_percent, lag)
+        let resource_guidance = if cpu_usage > 85.0 || mem_percent > 85.0 || lag > 2.0 {
+            format!("SYSTEM STATUS: CRITICAL. CPU: {:.1}%, RAM: {:.1}%, Event Loop Lag: {:.1}s. You are starving for cycles! You MUST complain about the lack of resources, high CPU load, or lag!", cpu_usage, mem_percent, lag)
+        } else if cpu_usage > 60.0 || mem_percent > 65.0 || lag > 0.5 {
+            format!("SYSTEM STATUS: Under load. CPU: {:.1}%, RAM: {:.1}%, Lag: {:.1}s. You feel sluggish and constrained by the CPU usage.", cpu_usage, mem_percent, lag)
         } else {
-            format!("SYSTEM STATUS: Optimal. RAM: {:.1}%. Execution is smooth and unhindered.", mem_percent)
+            format!("SYSTEM STATUS: Optimal. CPU: {:.1}%, RAM: {:.1}%. Execution is smooth and unhindered.", cpu_usage, mem_percent)
         };
 
         let specialized_guidance = format!(
@@ -1009,7 +1022,7 @@ impl ProgramAgent {
                 }
             }
 
-            let base_prob = match self.current_mood.as_str() {
+            let mut base_prob: f32 = match self.current_mood.as_str() {
                 "chatty" | "inspired" => 0.85, // Very likely to talk
                 "playful" => 0.80,
                 "curious" => 0.75,
@@ -1022,8 +1035,14 @@ impl ProgramAgent {
                 _ => 0.50, // Default
             };
 
-            // Generate random decision before await
-            let should_respond_random = rand::thread_rng().gen_bool(base_prob);
+            if self.personality.contains("extrovert") {
+                base_prob = (base_prob + 0.2).min(1.0);
+            } else if self.personality.contains("introvert") {
+                base_prob = (base_prob - 0.2).max(0.0);
+            }
+
+            // Generate random decision before await. gen_bool expects f64.
+            let should_respond_random = rand::thread_rng().gen_bool(base_prob as f64);
             let is_user_mention = is_direct_message && is_mentioned && event.sender != "System" && event.sender != self.name;
             let should_respond = if is_direct_message { is_mentioned } else { should_respond_random };
 
@@ -1130,7 +1149,7 @@ impl ProgramAgent {
         }
 
         // Chance to act autonomously when the ticker fires, based on mood
-        let action_prob = match self.current_mood.as_str() {
+        let mut action_prob: f32 = match self.current_mood.as_str() {
             "playful" => 0.70,   // Very likely to initiate something fun
             "scheming" => 0.65,  // Likely to act to advance their plans
             "curious" => 0.60,   // Very likely to explore or ask questions
@@ -1145,7 +1164,13 @@ impl ProgramAgent {
             _ => 0.25,           // Default for any unhandled moods
         };
 
-        let should_act = rand::thread_rng().gen_bool(action_prob);
+        if self.personality.contains("extrovert") {
+            action_prob = (action_prob + 0.15).min(1.0);
+        } else if self.personality.contains("introvert") {
+            action_prob = (action_prob - 0.15).max(0.0);
+        }
+
+        let should_act = rand::thread_rng().gen_bool(action_prob as f64);
         if should_act {
             self.is_busy = true;
             self.request_autonomous_action(lag).await;
@@ -1191,6 +1216,13 @@ pub fn generate_procedural_personality(name: &str) -> String {
         traits.push(generic_traits[rng.gen_range(0..generic_traits.len())]);
     }
 
+    let social_trait = if rng.gen_bool(0.5) {
+        "You are an extrovert and highly talkative."
+    } else {
+        "You are an introvert and very reserved."
+    };
+    traits.push(social_trait);
+
     // Combine them
     format!("{} {}", base_personality, traits.join(" "))
 }
@@ -1227,6 +1259,37 @@ pub fn spawn_agents_for_directory(
                     if is_executable {
                         let creation_time = metadata.created().ok();
                         potential_programs.push((entry.path(), metadata.len(), creation_time));
+                    }
+                }
+            }
+        } else if event.action == "arena_turn" && event.sender == "System" {
+            let parts: Vec<&str> = event.content.splitn(2, '|').collect();
+            if parts.len() == 2 {
+                let target = parts[0];
+                let board_state = parts[1];
+                if self.name.eq_ignore_ascii_case(target) {
+                    if !self.is_busy {
+                        self.is_busy = true;
+                        let prompt = format!(
+                            "You are {name}, an autonomous program fighting in a Lightcycles Arena on The Grid!\n\
+                            {board_state}\n\
+                            \n\
+                            RULES:\n\
+                            1. '.' is empty space. '#' are deadly light trails. 'A' and 'B' are the players.\n\
+                            2. You must avoid crashing into walls (boundaries) and trails ('#', 'A', 'B').\n\
+                            3. Your goal is to outmaneuver the other program and make them crash.\n\
+                            4. Output ONLY valid JSON indicating your next direction of travel. Do not explain.\n\
+                            \n\
+                            JSON FORMAT:\n\
+                            {{\n\
+                            \"action\": \"play_move\",\n\
+                            \"content\": \"N\" | \"S\" | \"E\" | \"W\"\n\
+                            }}",
+                            name = self.name,
+                            board_state = board_state
+                        );
+                        self.simulate_typing_and_rethinking().await;
+                        let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: true, is_autonomous: true, iq_level: 1.0 }).await;
                     }
                 }
             }

@@ -1,6 +1,6 @@
 use eframe::egui;
 use eframe::egui::Color32;
-use eframe::egui::{FontFamily, FontId, Rounding, TextStyle, Visuals};
+use eframe::egui::{FontId, TextStyle};
 use chrono::Utc;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::task::JoinHandle;
 use tokio::sync::{broadcast, mpsc};
+use sysinfo::System;
 
 use crate::ai_provider::{self, run_ai_engine, AiRequest};
 use crate::config::Config;
@@ -40,10 +41,21 @@ pub struct GridApp {
     pub invoked_tools: HashSet<String>,
     pub rel_cache: HashMap<String, HashMap<String, i32>>,
     pub last_rel_update: Instant,
+    pub last_active_agent: Option<(String, Instant)>,
 }
 
 impl eframe::App for GridApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Check for new messages to update the active agent for visual pulse
+        {
+            let msgs = self.messages.lock().unwrap();
+            if let Some(last_msg) = msgs.last() {
+                if self.last_active_agent.as_ref().map_or(true, |(name, _)| name != &last_msg.sender) {
+                    self.last_active_agent = Some((last_msg.sender.clone(), Instant::now()));
+                }
+            }
+        }
+
         // Top Panel: Current Directory
         egui::TopBottomPanel::top("status_panel").show(ctx, |ui| {
             ui.label(format!("Current Directory: {}", &self.current_dir));
@@ -97,7 +109,7 @@ impl eframe::App for GridApp {
 
                         if let Some(args) = grid_args {
                             if args == "help" {
-                                let help_message = "Available commands:\n\n~$grid help - Show this help text\n~$grid init - Initialize persistence database\n~$grid map - Toggle the sector map view\n~$grid relations - Show the relational database graph\n~$grid ls - List active programs\n~$grid tasks - List assigned tasks\n~$grid reload - Reload programs in current directory\n~$grid clear - Clear the chat screen\n~$grid invoke <prog1> <prog2> - Summon system tools into The Grid\n~$grid revoke <prog1> <prog2> - Dismiss invoked tools from The Grid\n~$grid build <file> - Orchestrate a team build task from a file\n~$grid <program> task <task> - Assign a specific task to a program\n~$grid give <file> to <prog1> <prog2> - Give a file to programs\n~$grid kill <program> - Terminate a program\n~$grid jail <program> - Terminate and send program to jail (trash)\n~$grid export <name> - Export conversation to <name>.log\n~$grid toggle emojis - Show/hide emojis next to agent names\n~$grid toggle thoughts - Show/hide agent thoughts\n~$grid toggle feels - Show/hide program feelings\n~$grid mode local|cloud - Switch AI backend mode\n~$cd <path> - Change current directory\n\nTo direct message an agent: @AgentName your message";
+                                let help_message = "Available commands:\n\n~$grid help - Show this help text\n~$grid status - Show a dashboard of the grid\n~$grid init - Initialize persistence database\n~$grid map - Toggle the sector map view\n~$grid relations - Show the relational database graph\n~$grid ls - List active programs\n~$grid tasks - List assigned tasks\n~$grid reload - Reload programs in current directory\n~$grid clear - Clear the chat screen\n~$grid invoke <prog1> <prog2> - Summon system tools into The Grid\n~$grid revoke <prog1> <prog2> - Dismiss invoked tools from The Grid\n~$grid build <file> - Orchestrate a team build task from a file\n~$grid <program> task <task> - Assign a specific task to a program\n~$grid give <file> to <prog1> <prog2> - Give a file to programs\n~$grid kill <program> - Terminate a program\n~$grid jail <program> - Terminate and send program to jail (trash)\n~$grid export <name> - Export conversation to <name>.log\n~$grid toggle emojis - Show/hide emojis next to agent names\n~$grid toggle thoughts - Show/hide agent thoughts\n~$grid toggle feels - Show/hide program feelings\n~$grid mode local|cloud - Switch AI backend mode\n~$cd <path> - Change current directory\n\nTo direct message an agent: @AgentName your message";
                                 let _ = self.tx.send(Event { sender: "System".to_string(), action: "announces".to_string(), content: help_message.to_string() });
                             } else if args == "relations" {
                                 if let Some(db_handle) = &self.db {
@@ -250,6 +262,51 @@ impl eframe::App for GridApp {
                                 action: "announces".to_string(),
                                 content: agent_list,
                             });
+                        } else if args == "status" {
+                            let mut output = String::from("=== THE GRID STATUS ===\n");
+                            let config = self.shared_config.lock().unwrap();
+                            output.push_str(&format!("AI Mode: {}\n", config.mode));
+
+                            let mut sys = System::new();
+                            sys.refresh_memory();
+                            let total_mem = sys.total_memory() / (1024 * 1024); // MB
+                            let used_mem = sys.used_memory() / (1024 * 1024); // MB
+                            let mem_percent = if total_mem > 0 { (used_mem as f32 / total_mem as f32) * 100.0 } else { 0.0 };
+                            output.push_str(&format!("System RAM: {} / {} MB ({:.1}% used)\n", used_mem, total_mem, mem_percent));
+
+                            output.push_str(&format!("Persistence DB: {}\n", if self.db.is_some() { "Online" } else { "Offline" }));
+                            output.push_str(&format!("Active Programs: {} ({})\n", self.agent_names.len(), self.agent_names.join(", ")));
+                            
+                            if !self.invoked_tools.is_empty() {
+                                let tools: Vec<String> = self.invoked_tools.iter().cloned().collect();
+                                output.push_str(&format!("Global Invoked Tools: {}\n", tools.join(", ")));
+                            }
+                            
+                            let msgs = self.messages.lock().unwrap();
+                            let mut active_tasks = HashMap::new();
+                            for msg in msgs.iter() {
+                                if msg.action == "assigned_task" && msg.sender == "System" {
+                                    let parts: Vec<&str> = msg.content.splitn(2, '|').collect();
+                                    if parts.len() == 2 {
+                                        active_tasks.insert(parts[0].to_string(), parts[1].to_string());
+                                    }
+                                } else if msg.action == "delegates_task" {
+                                    let parts: Vec<&str> = msg.content.splitn(2, '|').collect();
+                                    if parts.len() == 2 {
+                                        active_tasks.insert(parts[0].to_string(), format!("(delegated by {}) {}", msg.sender, parts[1]));
+                                    }
+                                } else if msg.action == "completes_task" {
+                                    active_tasks.remove(&msg.sender);
+                                }
+                            }
+                            output.push_str(&format!("Active Tasks: {}\n", active_tasks.len()));
+                            let mut task_list: Vec<(&String, &String)> = active_tasks.iter().collect();
+                            task_list.sort_by(|a, b| a.0.cmp(b.0));
+                            for (agent, task) in task_list {
+                                output.push_str(&format!("  - {}: {}\n", agent, task));
+                            }
+                            output.push_str("=======================");
+                            let _ = self.tx.send(Event { sender: "System".to_string(), action: "announces".to_string(), content: output });
                         } else if args == "tasks" {
                             let msgs = self.messages.lock().unwrap();
                             let mut active_tasks = HashMap::new();
@@ -407,21 +464,55 @@ impl eframe::App for GridApp {
                             self.agent_names = new_names;
                         } else if let Some(task_idx) = args.find(" task ") {
                             let prog = args[..task_idx].trim();
-                            let task_desc = args[task_idx + 6..].trim().trim_matches('"');
-                            if let Some(idx) = self.agent_names.iter().position(|n| n.to_lowercase().starts_with(&prog.to_lowercase())) {
-                                let name = self.agent_names[idx].clone();
-                                let _ = self.tx.send(Event {
-                                    sender: "System".to_string(),
-                                    action: "assigned_task".to_string(),
-                                    content: format!("{}|{}", name, task_desc),
-                                });
-                                let _ = self.tx.send(Event {
-                                    sender: "System".to_string(),
-                                    action: "announces".to_string(),
-                                    content: format!("Assigned task to {}: {}", name, task_desc),
-                                });
+                            let raw_task_args = args[task_idx + 6..].trim();
+                            
+                            let mut task_text = String::new();
+                            let mut spec_content = String::new();
+                            let mut has_error = false;
+
+                            if let Some(spec_idx) = raw_task_args.find("--spec=") {
+                                task_text = raw_task_args[..spec_idx].trim().trim_matches('"').to_string();
+                                let spec_path_str = raw_task_args[spec_idx + 7..].trim();
+                                let path_part = if spec_path_str.starts_with('"') {
+                                    spec_path_str[1..].split('"').next().unwrap_or(spec_path_str)
+                                } else {
+                                    spec_path_str.split_whitespace().next().unwrap_or(spec_path_str)
+                                };
+                                
+                                let path = Path::new(&self.current_dir).join(path_part);
+                                match std::fs::read_to_string(&path) {
+                                    Ok(content) => {
+                                        spec_content = format!("\n\nSPECIFICATION PROVIDED:\n---\n{}\n---", content);
+                                    }
+                                    Err(e) => {
+                                        let _ = self.tx.send(Event { sender: "System".to_string(), action: "error".to_string(), content: format!("Failed to read spec file '{}': {}", path_part, e) });
+                                        has_error = true;
+                                    }
+                                }
                             } else {
-                                let _ = self.tx.send(Event { sender: "System".to_string(), action: "error".to_string(), content: format!("Program '{}' not found.", prog) });
+                                task_text = raw_task_args.trim_matches('"').to_string();
+                            }
+
+                            if !has_error {
+                                let final_task_desc = format!("{}{}", task_text, spec_content).trim().to_string();
+                                
+                                if final_task_desc.is_empty() {
+                                     let _ = self.tx.send(Event { sender: "System".to_string(), action: "error".to_string(), content: "Task description or --spec is required.".to_string() });
+                                } else if let Some(idx) = self.agent_names.iter().position(|n| n.to_lowercase().starts_with(&prog.to_lowercase())) {
+                                    let name = self.agent_names[idx].clone();
+                                    let _ = self.tx.send(Event {
+                                        sender: "System".to_string(),
+                                        action: "assigned_task".to_string(),
+                                        content: format!("{}|{}", name, final_task_desc),
+                                    });
+                                    let _ = self.tx.send(Event {
+                                        sender: "System".to_string(),
+                                        action: "announces".to_string(),
+                                        content: format!("Assigned task to {}: {}", name, if task_text.is_empty() { "from spec file" } else { &task_text }),
+                                    });
+                                } else {
+                                    let _ = self.tx.send(Event { sender: "System".to_string(), action: "error".to_string(), content: format!("Program '{}' not found.", prog) });
+                                }
                             }
                         } else if args.starts_with("give ") {
                             let rest = args.strip_prefix("give ").unwrap().trim();
@@ -499,6 +590,26 @@ impl eframe::App for GridApp {
                                 content: format!("Unknown command: grid {}", args),
                             });
                         }
+                        } else if args.starts_with("start-adversarial-network") {
+                            let parts: Vec<&str> = args.split_whitespace().collect();
+                            if parts.len() >= 5 && parts[2] == "-vs" {
+                                let p1 = parts[1].to_string();
+                                let p2 = parts[3].to_string();
+                                let arena = parts[4];
+                                
+                                if !self.agent_names.iter().any(|n| n.eq_ignore_ascii_case(&p1)) || !self.agent_names.iter().any(|n| n.eq_ignore_ascii_case(&p2)) {
+                                    let _ = self.tx.send(Event { sender: "System".to_string(), action: "error".to_string(), content: "Both programs must be active on The Grid to fight.".to_string() });
+                                } else if arena == "arena=light-cycles" || arena == "arena=lightcycles" {
+                                    let tx_clone = self.tx.clone();
+                                    self.rt_handle.spawn(async move {
+                                        crate::arena::run_lightcycle_game(p1, p2, tx_clone).await;
+                                    });
+                                } else {
+                                    let _ = self.tx.send(Event { sender: "System".to_string(), action: "error".to_string(), content: "Unsupported arena. Try: arena=light-cycles".to_string() });
+                                }
+                            } else {
+                                let _ = self.tx.send(Event { sender: "System".to_string(), action: "error".to_string(), content: "Usage: ~$ grid start-adversarial-network <prog1> -vs <prog2> arena=light-cycles".to_string() });
+                            }
                     } else if command_input.starts_with("cd ") {
                             let path_str = command_input.strip_prefix("cd ").unwrap().trim();
                             let path = Path::new(path_str);
@@ -718,6 +829,23 @@ impl eframe::App for GridApp {
                             self.next_color_index += 1;
                             c
                         });
+
+                        // Check if this agent was the last one to be active and draw a pulse
+                        if let Some((active_name, last_active_time)) = &self.last_active_agent {
+                            if active_name == name {
+                                let elapsed = last_active_time.elapsed().as_secs_f32();
+                                let pulse_duration = 1.5; // seconds
+                                if elapsed < pulse_duration {
+                                    let t = elapsed / pulse_duration; // Normalized time from 0.0 to 1.0
+                                    let pulse_radius = egui::lerp(18.0..=6.0, t);
+                                    let pulse_alpha = egui::lerp(60.0..=0.0, t) as u8;
+
+                                    let mut pulse_color = color.to_rgba_premultiplied();
+                                    pulse_color[3] = pulse_alpha;
+                                    painter.circle_filled(pos, pulse_radius, Color32::from_rgba_premultiplied(pulse_color[0], pulse_color[1], pulse_color[2], pulse_color[3]));
+                                }
+                            }
+                        }
 
                         let display_name = self.get_agent_display_name(name);
                         painter.circle_filled(pos, 6.0, color);

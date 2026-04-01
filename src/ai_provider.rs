@@ -140,14 +140,10 @@ pub async fn run_ai_engine(
     config_for_ai: Arc<Mutex<Config>>,
 ) {
     let client = reqwest::Client::new();
-    let mut retries = 0;
-    let mut current_delay = Duration::from_secs(1);
-
     while let Some(request) = ai_rx.recv().await {
         // Reset retry logic for each new request
-        retries = 0;
-        current_delay = Duration::from_secs(1);
-
+        let mut retries = 0;
+        let mut current_delay = Duration::from_secs(1);
         loop { // Retry loop
             // Lock, copy data, and immediately unlock before any .await calls.
             let (mode, local_config, cloud_config, max_retries) = {
@@ -290,6 +286,13 @@ pub async fn run_ai_engine(
                                                             action: "completes_task".to_string(),
                                                             content,
                                                         });
+                                                    }
+                                                },
+                                                "play_move" => {
+                                                    if let Some(content) = action.content {
+                                                        // Extract just the first letter (N, S, E, W) in case LLM gets wordy
+                                                        let dir = content.trim().chars().next().unwrap_or(' ').to_string().to_uppercase();
+                                                        let _ = tx_for_ai.send(Event { sender: request.agent_name.clone(), action: "plays_move".to_string(), content: dir });
                                                     }
                                                 },
                                                 _ => {}
