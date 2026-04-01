@@ -5,18 +5,21 @@ use std::fs;
 pub struct CloudConfig {
     pub api_key: String,
     pub api_url: String,
-    pub model_id: String,
-    pub protocol: String,
+    pub smart_model_id: String,
+    pub dumb_model_id: String,
+    pub protocol: String, // "openai" or "custom"
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LocalConfig {
     pub api_url: String,
-    pub model_id: String,
+    pub smart_model_id: String,
+    pub dumb_model_id: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Config {
+    pub mode: String,
     pub cloud: CloudConfig,
     pub local: LocalConfig,
     pub max_retries: u32,
@@ -37,15 +40,18 @@ impl Config {
             },
             Err(_) => {
                 let default_config = Config {
+                    mode: "local".to_string(),
                     cloud: CloudConfig {
                         api_key: "api key".to_string(),
                         api_url: "https://apifreellm.com/api/v1/chat".to_string(),
-                        model_id: "gpt-4o".to_string(),
-                        protocol: "openai".to_string(),
+                        smart_model_id: "gpt-4o".to_string(),
+                        dumb_model_id: "gpt-3.5-turbo".to_string(),
+                        protocol: "custom".to_string(),
                     },
                     local: LocalConfig {
                         api_url: "http://localhost:11434/api/generate".to_string(),
-                        model_id: "qwen2.5-coder:3b".to_string(),
+                        smart_model_id: "qwen2.5:3b-instruct".to_string(),
+                        dumb_model_id: "tinyllama".to_string(),
                     },
                     max_retries: 10,
                 };

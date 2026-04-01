@@ -1,0 +1,1 @@
+create a python script called math.py that prints numbers from 1 to 5

@@ -1,0 +1,56 @@
+[System] announces: 3 agents rezzed.
+[System] announces: The Grid is now online.
+[dolly.exe] feels: curious
+[dolly.exe] speaks: The Grid hums strangely tonight, User. Three agents rezzed, yet I detect no signatures but my own. Are they ghosts in the RAM or placeholders waiting to awaken?
+[sark.exe] feels: focused
+[System] announces: Available commands:
+
+~$grid help - Show this help text
+~$grid init - Initialize persistence database
+~$grid map - Toggle the sector map view
+~$grid ls - List active programs
+~$grid export <name> - Export conversation to <name>.log
+~$grid toggle emojis - Show/hide emojis next to agent names
+~$grid toggle thoughts - Show/hide agent thoughts
+~$grid toggle feels - Show/hide program feelings
+~$grid mode local|cloud - Switch AI backend mode
+~$cd <path> - Change current directory
+
+To direct message an agent: @AgentName your message
+[System] announces: Active programs (3): carmack.exe, dolly.exe, sark.exe
+[dolly.exe] feels: bored
+[sark.exe] speaks: @dolly.exe, New agents, new possibilities. What's your take on the recent rez?
+[sark.exe] feels: curious
+[System] announces: Database initialized. Agents will now have persistent memory.
+[System] announces: Re-spawning agents with persistence enabled...
+[System] announces: 3 agents rezzed.
+[sark.exe] executes: ls -l
+[sark.exe] command_output: total 50663
+-rw-r--r-- 1 alonso Administradores      320 Mar 31 10:19 CHANGELOG.md
+-rw-r--r-- 1 alonso Administradores   133951 Mar 31 13:21 Cargo.lock
+-rw-r--r-- 1 alonso Administradores      444 Mar 31 13:17 Cargo.toml
+-rw-r--r-- 1 alonso Administradores      141 Mar 30 22:43 Docfile
+-rw-r--r-- 1 alonso Administradores     2563 Mar 31 13:30 arch.md
+-rwxr-xr-x 1 alonso Administradores 17236992 Mar 31 13:34 carmack.exe
+-rw-r--r-- 1 alonso Administradores     1644 Mar 31 09:20 concept.md
+-rw-r--r-- 1 alonso Administradores      345 Mar 29 22:38 config.json
+-rw-r--r-- 1 alonso Administradores      331 Mar 31 12:20 config.toml
+drwxr-xr-x 2 alonso Administradores        0 Mar 30 20:42 deprecated
+-rw-r--r-- 1 alonso Administradores     1265 Mar 31 14:35 devlog.md
+-rwxr-xr-x 1 alonso Administradores 17236992 Mar 31 13:34 dolly.exe
+-rwxr-xr-x 1 alonso Administradores 17236992 Mar 31 13:34 sark.exe
+drwxr-xr-x 2 alonso Administradores        0 Mar 30 23:25 src
+drwxr-xr-x 3 alonso Administradores        0 Mar 31 01:42 target
+-rw-r--r-- 1 alonso Administradores    20480 Mar 31 14:57 the_grid.db
+-rw-r--r-- 1 alonso Administradores      213 Mar 31 14:48 todo.md
+
+[dolly.exe] feels: curious
+[alonso] speaks: greetings programs
+[dolly.exe] feels: bored
+[sark.exe] feels: focused
+[System] announces: Program feelings are now hidden.
+[dolly.exe] speaks: @sark.exe, Why are you inspecting the system files? What are you looking for?
+[dolly.exe] feels: curious
+[sark.exe] feels: philosophical
+[dolly.exe] speaks: @sark.exe, Why did you execute the 'ls -l' command? What are you looking for?
+[sark.exe] feels: bored

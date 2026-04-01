@@ -21,6 +21,7 @@ Agent decides it wants to speak → sends persona + memory + recent context to A
 AI generates a message for that agent
 Message is appended to the shared conversation/environment
 All agents can read from shared environment → next turn influenced by others
+
 2. Memory & Context Management
 Each agent stores:
 Last N messages it said or received
@@ -56,3 +57,10 @@ Each agent just sends a “request” with persona + memory → single AI handle
 Agent-specific “temperature” → some agents are chaotic, some are calm
 Memory decay / forgetfulness → each agent occasionally forgets things
 Shared knowledge base → events or files in system can influence multiple agents simultaneously
+
+# high level arch
+[Scheduler]
+   ↓
+[Agents] ←→ [Shared Memory / Chat]
+   ↓
+[Environment (files, state)]

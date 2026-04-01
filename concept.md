@@ -29,3 +29,7 @@ Excecutable binary files -> humanoid automatons
 Executable text files (text files ) -> animal-like robots
 Non executable Binary files -> things, objects
 Non executable text files -> books, scripts
+
+# identity
+-programs known to the AI training data know their purpose
+-programs unknown to the ai training data don't know their purpose
