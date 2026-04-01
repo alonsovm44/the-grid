@@ -13,5 +13,6 @@ Dev diary kept with Diaryx
 [2026-03-31 14:34:05] ill soon implement the relational database
 [2026-03-31 14:35:21] ill add a sponsor command and a get-key that redirects to apifreellm
 [2026-03-31 16:39:16] pivoted, now i am building an AI powered software development team
-[2026-03-31 18:23:48] i am gonna add ~$ grid shushcommand so programs stop talking and only reply when asked
+[2026-03-31 18:23:48] i am gonna add `~$ grid shush` command so programs stop talking and only reply when asked
 [2026-03-31 18:24:26] of course they can write files and work, and think, just not talk aloud
+[2026-03-31 19:22:18] ive also noticed that programs can reply to each other on recent comments, but when it comes to the user it lags behind quite notably, also it repeats the same line over and over again
