@@ -181,6 +181,8 @@ fn main() -> eframe::Result<()> {
                 rel_cache: HashMap::new(),
                 last_rel_update: Instant::now(),
                 last_active_agent: None,
+                map_user_pos: egui::pos2(0.0, 0.0),
+                file_positions: HashMap::new(),
             })
         }),
     )

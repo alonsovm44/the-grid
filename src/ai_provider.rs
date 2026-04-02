@@ -96,13 +96,20 @@ pub fn execute_command_and_broadcast(command_str: String, tx: broadcast::Sender<
             content: command_str.clone(),
         });
 
-        let (shell, arg) = if cfg!(target_os = "windows") {
-            ("cmd", "/C")
+        let output = if cfg!(target_os = "windows") {
+            Command::new("cmd")
+                .arg("/C")
+                // On Windows, cmd /C strips the first and last quote if both are present.
+                // To prevent this from breaking commands that use internal quotes (like paths with spaces),
+                // we wrap the entire command string in an extra set of quotes.
+                .arg(format!("\"{}\"", command_str))
+                .output()
         } else {
-            ("sh", "-c")
+            Command::new("sh")
+                .arg("-c")
+                .arg(&command_str)
+                .output()
         };
-
-        let output = Command::new(shell).arg(arg).arg(&command_str).output();
 
         let response_content = match output {
             Ok(out) => {

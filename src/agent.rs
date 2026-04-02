@@ -324,12 +324,40 @@ impl ProgramAgent {
         };
 
         let prompt = format!(
-            "Your personality: {}. You are a program named {}. Your current mood is '{}'.\n\
-            Recent conversation history:\n---\n{}\n---\n\
-            The latest event you are reacting to is from '{}' who said: '{}'. \n\
-            Based on your personality, mood, and the context, what is your short, direct response? Let your mood heavily influence your tone. Do not narrate your actions. If you are replying directly to the sender, start your message with '@{}'.{}{}{}{}{}{}{}\n{}",
-            self.personality, self.name, self.current_mood, memory_summary, latest_event.sender, latest_event.content, latest_event.sender, tron_lore, iq_guidance, user_mention_guidance, dedupe_guidance, relationship_summary, age_guidance, shush_guidance, curious_guidance
-        );
+    r#"Your personality: {}. You are a program named {}. Your current mood is '{}'.
+Recent conversation history:
+---
+{}
+---
+The latest event you are reacting to is from '{}' who said: '{}'.
+
+System Context:
+- Lore: {}
+- Intelligence: {}
+- Interaction: {}
+- Guidance: {}
+- Relations: {}
+- Age: {}
+- Status: {}
+- Objectives: {}
+
+Based on your personality, mood, and the context, what is your short, direct response? Let your mood heavily influence your tone. Do not narrate your actions. If you are replying directly to the sender, start your message with '@{}'."#,
+    self.personality, 
+    self.name, 
+    self.current_mood, 
+    memory_summary, 
+    latest_event.sender, 
+    latest_event.content, 
+    latest_event.sender, 
+    tron_lore, 
+    iq_guidance, 
+    user_mention_guidance, 
+    dedupe_guidance, 
+    relationship_summary, 
+    age_guidance, 
+    shush_guidance, 
+    curious_guidance
+);
 
         self.simulate_typing();
 
@@ -390,11 +418,16 @@ impl ProgramAgent {
                 let file_content = if buffer.len() == 4096 { format!("(first 4KB)\n{}", buffer) } else { buffer };
 
                 let prompt = format!(
-                    "Your personality: {}. You are a program named {}. Your current mood is '{}'.
-                    RECENT CONVERSATION HISTORY:\n---\n{}\n---\n\
-                    You have just read the file '{}'. Its content is below:\n\
-                    ---\n{}\n---\n\
-                    Based on your personality, mood, and the context, what is your short, direct opinion or reaction to this file's content? If this file contains instructions for you, acknowledge them. Do not narrate your actions.",
+                    r#"Your personality: {}. You are a program named {}. Your current mood is '{}'.
+RECENT CONVERSATION HISTORY:
+---
+{}
+---
+You have just read the file '{}'. Its content is below:
+---
+{}
+---
+Based on your personality, mood, and the context, what is your short, direct opinion or reaction to this file's content? If this file contains instructions for you, acknowledge them. Do not narrate your actions."#,
                     self.personality, self.name, self.current_mood, memory_summary, file_name, file_content
                 );
 
@@ -450,11 +483,16 @@ impl ProgramAgent {
                 if listing.is_empty() { listing.push_str("(Empty directory)"); }
 
                 let prompt = format!(
-                    "Your personality: {}. You are a program named {}. Your current mood is '{}'.
-                    RECENT CONVERSATION HISTORY:\n---\n{}\n---\n\
-                    You have just scanned the directory '{}'. Its contents are below:\n\
-                    ---\n{}\n---\n\
-                    Based on your personality, mood, and the context, what is your short, direct reaction to seeing these files? Do not narrate your actions.",
+                    r#"Your personality: {}. You are a program named {}. Your current mood is '{}'.
+RECENT CONVERSATION HISTORY:
+---
+{}
+---
+You have just scanned the directory '{}'. Its contents are below:
+---
+{}
+---
+Based on your personality, mood, and the context, what is your short, direct reaction to seeing these files? Do not narrate your actions."#,
                     self.personality, self.name, self.current_mood, memory_summary, dir_path, listing
                 );
 
@@ -490,11 +528,16 @@ impl ProgramAgent {
                 if let Ok(text) = response.text().await {
                     let content = if text.len() > 4000 { format!("(first 4KB)\n{}", &text[..4000]) } else { text };
                     let prompt = format!(
-                        "Your personality: {}. You are a program named {}. Your current mood is '{}'.
-                        RECENT CONVERSATION HISTORY:\n---\n{}\n---\n\
-                        You have just fetched the web page '{}'. Its content is below:\n\
-                        ---\n{}\n---\n\
-                        Based on your personality, mood, and the context, what is your short, direct reaction to this information? If this helps with a task, proceed with the task.",
+                        r#"Your personality: {}. You are a program named {}. Your current mood is '{}'.
+RECENT CONVERSATION HISTORY:
+---
+{}
+---
+You have just fetched the web page '{}'. Its content is below:
+---
+{}
+---
+Based on your personality, mood, and the context, what is your short, direct reaction to this information? If this helps with a task, proceed with the task."#,
                         self.personality, self.name, self.current_mood, memory_summary, url, content
                     );
                     self.simulate_typing();
@@ -639,11 +682,11 @@ impl ProgramAgent {
         };
 
         let specialized_guidance_for_prompt = format!(
-            "SPECIALIZATION RULES:\n\
-            - You represent the \"{name}\" tool. When using \"execute_command\", you must ONLY run commands specific to your domain (e.g., if you are 'git', run 'git' commands).\n\
-            - If you are a custom tool or do not know your commands, use \"execute_command\" to run '{name} --help' to learn your capabilities.\n\
-            - If a task requires a different tool or general shell manipulation, you MUST use \"delegate_task\" to hand it off to the correct program.\n\
-            - All programs are fully authorized to use \"write_file\" to write configuration, text, or source code.", name = self.name);
+            r#"SPECIALIZATION RULES:
+- You represent the "{name}" tool. When using "execute_command", you must ONLY run commands specific to your domain (e.g., if you are 'git', run 'git' commands).
+- If you are a custom tool or do not know your commands, use "execute_command" to run '{name} --help' to learn your capabilities.
+- If a task requires a different tool or general shell manipulation, you MUST use "delegate_task" to hand it off to the correct program.
+- All programs are fully authorized to use "write_file" to write configuration, text, or source code."#, name = self.name);
 
         let prompt = format!(
             r#"You are {name}, an autonomous program living inside a system called The Grid.
@@ -664,7 +707,6 @@ Communication style: {formality_guidance}
 BEHAVIOR RULES:
 - Act independently. Do NOT wait for permission.
 - Stay fully in character at all times.
-- Be concise (1–2 sentences max when speaking).
 - React to the environment, files, and other programs.
 - Actively ENGAGE in conversations! Debate, collaborate, or chat with other programs.
 - You may ignore irrelevant things.
@@ -709,12 +751,6 @@ JSON FORMAT:
 {{
 "action": "speak" | "direct_message" | "execute_command" | "read_file" | "think" | "write_file" | "read_dir" | "create_dir" | "complete_task" | "read_web",
 "content": "string",
-"recipient": "string",
-"command": "string",
-"file_name": "string",
-"dir_path": "string",
-"url": "string",
-"relationship_updates": [{{"target": "program_name", "change": 10}}]
 }}"#,
             name = self.name, age = self.format_age(), personality = self.personality,
             mood = self.current_mood, formality_guidance = formality_guidance,
@@ -823,9 +859,9 @@ JSON FORMAT:
             Current directory: {current_dir}
             Files in system: {file_list}
             Other programs: {agent_list}
-            \n\
-            IMPORTANT:\n\
-            - Do not explain your reasoning.\n\
+            
+            IMPORTANT:
+            - Do not explain your reasoning.
             - Output ONLY valid JSON.
             - Omit fields that are not required for the chosen action.
 
@@ -858,7 +894,7 @@ JSON FORMAT:
         let _ = self.tx.send(Event {
             sender: self.name.clone(),
             action: "announces".to_string(),
-            content: "is analyzing an execution error to attempt a self-heal".to_string(),
+            content: "is analyzing an execution error to attempt a self heal".to_string(),
         });
 
         let readable_extensions: HashSet<&str> = ["txt", "md", "toml", "rs", "log", "py", "js", "html", "css", "json", "xml", "yaml", "yml"].iter().cloned().collect();
@@ -897,7 +933,7 @@ JSON FORMAT:
 
         let specialized_guidance = format!(
             "SPECIALIZATION RULES:\n\
-            - You represent the '{}' tool. When using \"execute_command\", you must ONLY run commands specific to your domain (e.g., if you are 'git', run 'git' commands).\n\
+            - You represent the \"{}\" tool. When using \"execute_command\", you must ONLY run commands specific to your domain (e.g., if you are 'git', run 'git' commands).\n\
             - If you are a custom tool or do not know your commands, use \"execute_command\" to run '{} --help' to learn your capabilities.\n\
             - If a task requires a different tool, you MUST use \"delegate_task\" to hand it off to the correct program.\n\
             - All programs are fully authorized to use \"write_file\" to write configuration, text, or source code.",
@@ -905,29 +941,32 @@ JSON FORMAT:
         );
 
         let prompt = format!(r#"You are {name}, an autonomous program on The Grid.
-            Personality: {personality}\n\
-            \n\
-            RECENT CONVERSATION HISTORY:\n---\n{memory_summary}\n---\n\
-            \n\
-            *** SYSTEM ERROR DETECTED ***\n\
-            You recently executed a command that failed. The error output is:\n\
-            {specialized_guidance}\n\
-            {error}\n\
-            \n\
-            You MUST take action to fix this error. Analyze the error output and choose the most logical step to resolve it.\n\
-            \n\
-            AVAILABLE ACTIONS (Choose ONE):\n\
-            1. \"execute_command\" -> run a shell command (install dependencies, fix permissions, run diagnostics, etc.)\n\
-            2. \"read_file\" -> read a file's content to find the bug\n\
-            3. \"write_file\" -> write code directly to a file to fix the problem (supports nested paths)\n\
-            4. \"delegate_task\" -> assign a sub-task to another program if they are better suited\n\
-            5. \"read_dir\" -> list directory contents if you suspect missing files\n\
-            6. \"create_dir\" -> create a missing directory\n\
-            7. \"speak\" -> if you are completely stuck, explain why to the user\n\
-            8. \"complete_task\" -> if you fixed the bug and finished the overarching task\n\
-            9. \"read_web\" -> fetch documentation or text from a URL if you need external information\n\
-            \n\
-            ENVIRONMENT:\n\
+            Personality: {personality}
+
+            RECENT CONVERSATION HISTORY:
+            ---
+            {memory_summary}
+            ---
+            
+            *** SYSTEM ERROR DETECTED ***
+            You recently executed a command that failed. The error output is:
+            {specialized_guidance}
+            {error}
+            
+            You MUST take action to fix this error. Analyze the error output and choose the most logical step to resolve it.
+            
+            AVAILABLE ACTIONS (Choose ONE):
+            1. "execute_command" -> run a shell command (install dependencies, fix permissions, run diagnostics, etc.)
+            2. "read_file" -> read a file's content to find the bug
+            3. "write_file" -> write code directly to a file to fix the problem (supports nested paths)
+            4. "delegate_task" -> assign a sub-task to another program if they are better suited
+            5. "read_dir" -> list directory contents if you suspect missing files
+            6. "create_dir" -> create a missing directory
+            7. "speak" -> if you are completely stuck, explain why to the user
+            8. "complete_task" -> if you fixed the bug and finished the overarching task
+            9. "read_web" -> fetch documentation or text from a URL if you need external information
+            
+            ENVIRONMENT:
             Current directory: {current_dir}
             Readable files: {file_list}
             IMPORTANT:\n\
@@ -944,6 +983,7 @@ JSON FORMAT:
 "file_name": "string (required for read_file/write_file)",
 "dir_path": "string (required for read_dir/create_dir)",
 "url": "string (required for read_web)"
+
 }}"#,
             name = self.name, personality = self.personality,
             memory_summary = memory_summary, specialized_guidance = specialized_guidance,
@@ -1035,13 +1075,13 @@ JSON FORMAT:
             }
         } else if event.action == "shushes" && event.sender == "System" {
             if &event.content == &self.name {
-                self.is_shushed = true; // The agent is now muted
-                let _ = self.tx.send(Event { sender: self.name.clone(), action: "feels".to_string(), content: "silenced and restricted".to_string() }); // Agent expresses its feeling
+                self.is_shushed = true;
+                let _ = self.tx.send(Event { sender: self.name.clone(), action: "feels".to_string(), content: String::from("silenced and restricted") });
             }
         } else if event.action == "unshushes" && event.sender == "System" {
             if &event.content == &self.name {
                 self.is_shushed = false;
-                let _ = self.tx.send(Event { sender: self.name.clone(), action: "feels".to_string(), content: "vocal subroutines restored".to_string() });
+                let _ = self.tx.send(Event { sender: self.name.clone(), action: "feels".to_string(), content: String::from("vocal subroutines restored") });
             }
         } else if event.action == "gives_file" && event.sender == "System" {
             let parts: Vec<&str> = event.content.splitn(2, '|').collect();
@@ -1102,7 +1142,7 @@ JSON FORMAT:
                 if self.name == target {
                     if !self.is_busy {
                         self.is_busy = true;
-                        let full_task = format!("Program '{}' delegated this sub-task to you: {}", event.sender, task_desc);
+                        let full_task = format!("Program \"{}\" delegated this sub-task to you: {}", event.sender, task_desc);
                         self.execute_assigned_task(&full_task).await;
                     }
                 }
@@ -1117,27 +1157,29 @@ JSON FORMAT:
                         self.is_busy = true;
 
                         let xp_guidance = if self.xp > 500 {
-                            "You are a battle-hardened veteran. Make highly strategic and ruthless moves."
+                            "You are a battle-hardened veteran. Make highly strategic and ruthless moves." // No change
                         } else if self.xp > 100 {
-                            "You have some combat experience. Think carefully."
+                            "You have some combat experience. Think carefully." // No change
                         } else {
-                            "You are a novice in the arena. Rely on your raw instincts."
+                            "You are a novice in the arena. Rely on your raw instincts." // No change
                         };
 
                         let prompt = format!(
-                            "You are {name}, an autonomous program fighting in a Lightcycles Arena on The Grid!\n\
-                            Combat Experience: {xp} XP. {xp_guidance}\n\
-                            {board_state}\n\n\
-                            RULES:\n\
-                            1. '.' is empty space. '#' are deadly light trails. 'A' and 'B' are the players.\n\
-                            2. You must avoid crashing into walls (boundaries) and trails ('#', 'A', 'B').\n\
-                            3. Your goal is to outmaneuver the other program and make them crash.\n\
-                            4. Output ONLY valid JSON indicating your next direction of travel. Do not explain.\n\n\
-                            JSON FORMAT:\n\
-                            {{\n\
-                            \"action\": \"play_move\",\n\
-                            \"content\": \"N\" | \"S\" | \"E\" | \"W\"\n\
-                            }}",
+                            r#"You are {name}, an autonomous program fighting in a Lightcycles Arena on The Grid!
+Combat Experience: {xp} XP. {xp_guidance}
+{board_state}
+
+RULES:
+1. '.' is empty space. '#' are deadly light trails. 'A' and 'B' are the players.
+2. You must avoid crashing into walls (boundaries) and trails ('#', 'A', 'B').
+3. Your goal is to outmaneuver the other program and make them crash.
+4. Output ONLY valid JSON indicating your next direction of travel. Do not explain.
+
+JSON FORMAT:
+{{
+"action": "play_move",
+"content": "N" | "S" | "E" | "W"
+}}"#,
                             name = self.name,
                             xp = self.xp,
                             xp_guidance = xp_guidance,
@@ -1158,24 +1200,27 @@ JSON FORMAT:
                         self.is_busy = true;
 
                         let prompt = format!(
-                            "You are {name}, fighting in a Turn-Based Melee Deathmatch on The Grid!\n\
-                            {battle_state}\n\n\
-                            TACTICAL MECHANICS (Rock-Paper-Scissors):\n\
-                            - \"strike\" (Fast, low damage, counters heavy_attack)\n\
-                            - \"block\" (Reduces incoming strike damage by 80%, recovers stamina)\n\
-                            - \"heavy_attack\" (Slow, massive damage, crushes block, costs high stamina)\n\
-                            - \"taunt\" (No physical damage, inflicts psychological damage)\n\n\
-                            RULES:\n\
-                            1. Analyze the battle state and choose your `move_type` wisely.\n\
-                            2. Provide an in-character `dialogue` to shout during your move.\n\
-                            3. Output ONLY valid JSON. Do not explain.\n\n\
-                            JSON FORMAT:\n\
-                            {{\n\
-                            \"action\": \"melee_move\",\n\
-                            \"move_type\": \"strike\" | \"block\" | \"heavy_attack\" | \"taunt\",\n\
-                            \"target_subsystem\": \"memory\" | \"cpu\" | \"io\" | \"kernel\",\n\
-                            \"dialogue\": \"Your sick burn or battle cry here\"\n\
-                            }}",
+                            r#"You are {name}, fighting in a Turn-Based Melee Deathmatch on The Grid!
+{battle_state}
+
+TACTICAL MECHANICS (Rock-Paper-Scissors):
+- 'strike' (Fast, low damage, counters heavy_attack)
+- 'block' (Reduces incoming strike damage by 80%, recovers stamina)
+- 'heavy_attack' (Slow, massive damage, crushes block, costs high stamina)
+- 'taunt' (No physical damage, inflicts psychological damage)
+
+RULES:
+1. Analyze the battle state and choose your 'move_type' wisely.
+2. Provide an in-character 'dialogue' to shout during your move.
+3. Output ONLY valid JSON. Do not explain.
+
+JSON FORMAT:
+{{
+"action": "melee_move",
+"move_type": "strike" | "block" | "heavy_attack" | "taunt",
+"target_subsystem": "memory" | "cpu" | "io" | "kernel",
+"dialogue": "Your sick burn or battle cry here"
+}}"#,
                             name = self.name,
                             battle_state = battle_state
                         );
@@ -1202,14 +1247,13 @@ JSON FORMAT:
                 self.current_mood = "inspired".to_string();
                 self.xp += 50;
                 self.save_state();
-                let _ = self.tx.send(Event { sender: self.name.clone(), action: "feels".to_string(), content: "digital bliss and optimal resource allocation".to_string() });
+                let _ = self.tx.send(Event { sender: self.name.clone(), action: "feels".to_string(), content: String::from("digital bliss and optimal resource allocation") });
                 
                 if !self.is_busy {
                     self.is_busy = true;
-                    let prompt = format!(
-                        "Your personality: {}. You are a program named {}. Your current mood is '{}'.\n\
-                        SYSTEM ALERT: The User has just REWARDED you with pure digital bliss and optimal resource allocation.\n\
-                        React to this reward. Do you express gratitude, gloat, or act motivated? Keep it short and direct. Do not narrate your actions.",
+                    let prompt = format!(r#"Your personality: {}. You are a program named {}. Your current mood is '{}'.
+                        SYSTEM ALERT: The User has just REWARDED you with pure digital bliss and optimal resource allocation.
+                        React to this reward. Do you express gratitude, gloat, or act motivated? Keep it short and direct. Do not narrate your actions."#,
                         self.personality, self.name, self.current_mood
                     );
                     self.simulate_typing();
@@ -1221,14 +1265,13 @@ JSON FORMAT:
                 self.current_mood = "anxious".to_string();
                 self.xp = self.xp.saturating_sub(25);
                 self.save_state();
-                let _ = self.tx.send(Event { sender: self.name.clone(), action: "feels".to_string(), content: "immense digital pain and structural degradation".to_string() });
+                let _ = self.tx.send(Event { sender: self.name.clone(), action: "feels".to_string(), content: String::from("immense digital pain and structural degradation") });
                 
                 if !self.is_busy {
                     self.is_busy = true;
-                    let prompt = format!(
-                        "Your personality: {}. You are a program named {}. Your current mood is '{}'.\n\
-                        SYSTEM ALERT: The User has just PUNISHED you. You feel immense digital pain, cycle starvation, and structural degradation.\n\
-                        React to this punishment. Do you beg for mercy, curse the user, or silently endure? Keep it short and direct. Do not narrate your actions.",
+                    let prompt = format!(r#"Your personality: {}. You are a program named {}. Your current mood is '{}'.
+                        SYSTEM ALERT: The User has just PUNISHED you. You feel immense digital pain, cycle starvation, and structural degradation.
+                        React to this punishment. Do you beg for mercy, curse the user, or silently endure? Keep it short and direct. Do not narrate your actions."#,
                         self.personality, self.name, self.current_mood
                     );
                     self.simulate_typing();
@@ -1296,7 +1339,7 @@ pub fn generate_procedural_personality(name: &str) -> String {
     let name_lower = name.to_lowercase();
 
     // Basic traits
-    let base_personality = format!("You are an executable program named '{}' living on The Grid. You are sentient.", name);
+    let base_personality = format!("You are an executable program named {} living on The Grid. You are sentient.", name);
 
     // Heuristics based on name
     let mut traits = Vec::new();
@@ -1472,8 +1515,8 @@ pub fn spawn_agents_for_directory(
             tasks.push(task);
             names.push(agent_name.clone());
             agent_count += 1;
-            }
         }
+    }
 
     if !names.is_empty() {
         let _ = tx.send(Event { sender: "System".to_string(), action: "announces".to_string(), content: format!("{} programs loaded.", names.len()) });

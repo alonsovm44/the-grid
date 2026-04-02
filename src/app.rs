@@ -42,6 +42,8 @@ pub struct GridApp {
     pub rel_cache: HashMap<String, HashMap<String, i32>>,
     pub last_rel_update: Instant,
     pub last_active_agent: Option<(String, Instant)>,
+    pub map_user_pos: egui::Pos2,
+    pub file_positions: HashMap<String, egui::Pos2>,
 }
 
 impl eframe::App for GridApp {
@@ -852,11 +854,26 @@ impl eframe::App for GridApp {
             egui::Window::new("The Grid - Sector Map")
                 .collapsible(false)
                 .resizable(true)
-                .default_size([400.0, 400.0])
+                .default_size([800.0, 600.0])
                 .open(&mut is_map_open)
                 .show(ctx, |ui| {
-                    let (response, painter) = ui.allocate_painter(ui.available_size(), egui::Sense::hover());
+                    let (response, painter) = ui.allocate_painter(ui.available_size(), egui::Sense::click_and_drag());
                     let rect = response.rect;
+                    let center = rect.center();
+
+                    // Handle WASD Movement
+                    let speed = 4.0;
+                    ctx.input(|i| {
+                        if i.key_down(egui::Key::W) { self.map_user_pos.y -= speed; }
+                        if i.key_down(egui::Key::S) { self.map_user_pos.y += speed; }
+                        if i.key_down(egui::Key::A) { self.map_user_pos.x -= speed; }
+                        if i.key_down(egui::Key::D) { self.map_user_pos.x += speed; }
+                    });
+
+                    // Request a repaint to keep movement smooth
+                    if ctx.input(|i| !i.keys_down.is_empty()) {
+                        ctx.request_repaint();
+                    }
 
                     // Draw background grid
                     let grid_color = Color32::from_rgba_premultiplied(0, 255, 255, 20); // Dim cyan
@@ -870,11 +887,35 @@ impl eframe::App for GridApp {
                         painter.line_segment([egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)], (1.0, grid_color));
                     }
 
-                    let center = rect.center();
-                    
-                    // Draw user
+                    // Draw User (always at visual center relative to their world position)
                     painter.circle_filled(center, 8.0, Color32::YELLOW);
                     painter.text(center + egui::vec2(0.0, 15.0), egui::Align2::CENTER_CENTER, &self.user_name, FontId::monospace(14.0), Color32::YELLOW);
+
+                    // Discover and Place Files
+                    if let Ok(entries) = std::fs::read_dir(&self.current_dir) {
+                        let mut rng = rand::thread_rng();
+                        for entry in entries.flatten() {
+                            if let Ok(name) = entry.file_name().into_string() {
+                                let file_pos = *self.file_positions.entry(name.clone()).or_insert_with(|| {
+                                    // Assign a random position in a large area if not already placed
+                                    use rand::Rng;
+                                    egui::pos2(rng.gen_range(-1000.0..1000.0), rng.gen_range(-1000.0..1000.0))
+                                });
+
+                                // Calculate visual position based on user camera
+                                let visual_pos = center + (file_pos.to_vec2() - self.map_user_pos.to_vec2());
+
+                                // Only draw if within window bounds
+                                if rect.contains(visual_pos) {
+                                    let is_exe = entry.path().extension().map_or(false, |ext| ext == "exe");
+                                    let color = if is_exe { Color32::from_rgb(0, 255, 100) } else { Color32::DARK_GRAY };
+                                    
+                                    painter.rect_stroke(egui::Rect::from_center_size(visual_pos, egui::vec2(4.0, 4.0)), 0.0, (1.0, color));
+                                    painter.text(visual_pos + egui::vec2(0.0, 10.0), egui::Align2::CENTER_CENTER, &name, FontId::monospace(10.0), color);
+                                }
+                            }
+                        }
+                    }
 
                     // Draw agents
                     let radius = f32::min(rect.width(), rect.height()) / 3.0;
@@ -899,10 +940,10 @@ impl eframe::App for GridApp {
                             for (target_name, affinity) in relationships {
                                 if let Some(j) = self.agent_names.iter().position(|n| n == target_name) {
                                     let angle_i = (i as f32 / num_agents as f32) * std::f32::consts::TAU;
-                                    let pos_i = center + egui::vec2(angle_i.cos() * radius, angle_i.sin() * radius);
+                                    let pos_i = center + egui::vec2(angle_i.cos() * radius, angle_i.sin() * radius) - self.map_user_pos.to_vec2();
                                     
                                     let angle_j = (j as f32 / num_agents as f32) * std::f32::consts::TAU;
-                                    let pos_j = center + egui::vec2(angle_j.cos() * radius, angle_j.sin() * radius);
+                                    let pos_j = center + egui::vec2(angle_j.cos() * radius, angle_j.sin() * radius) - self.map_user_pos.to_vec2();
 
                                     let color = if *affinity > 0 {
                                         Color32::from_rgba_premultiplied(0, 255, 0, 50) // Greenish
@@ -919,7 +960,7 @@ impl eframe::App for GridApp {
 
                     for (i, name) in self.agent_names.iter().enumerate() {
                         let angle = (i as f32 / num_agents as f32) * std::f32::consts::TAU;
-                        let pos = center + egui::vec2(angle.cos() * radius, angle.sin() * radius);
+                        let pos = center + egui::vec2(angle.cos() * radius, angle.sin() * radius) - self.map_user_pos.to_vec2();
 
                         let color = *self.colors.entry(name.clone()).or_insert_with(|| {
                             let c = self.color_palette[self.next_color_index % self.color_palette.len()];

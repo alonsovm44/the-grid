@@ -4,10 +4,16 @@ project:
   intent: "Build a command-line calculator in C++ supporting basic arithmetic. Self-organize to create the files, build the project, and commit the final code."
 
 app:
-  type: "CLI"
+  type: "CLI" # two options: "CLI" or "GUI"
   languages: "C++"
   commands:
-    - 
+    - "add"
+    - "sub"
+    - "mul"
+    - "div"
+
+  flags:
+
 scaffold:
   directories:
     - "src"
