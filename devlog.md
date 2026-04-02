@@ -17,3 +17,4 @@ Dev diary kept with Diaryx
 [2026-03-31 18:24:26] of course they can write files and work, and think, just not talk aloud
 [2026-03-31 19:22:18] ive also noticed that programs can reply to each other on recent comments, but when it comes to the user it lags behind quite notably, also it repeats the same line over and over again
 [2026-03-31 22:42:10] i might add soon digitization code, and perhaps think it better
+[2026-04-01 20:41:38] i plan to add a progress bar to project progress, even if it is an heuristic

@@ -1,0 +1,32 @@
+project:
+  name: calcx
+  version: 0.0.1
+  intent: "Build a command-line calculator in C++ supporting basic arithmetic. Self-organize to create the files, build the project, and commit the final code."
+
+app:
+  type: "CLI"
+  languages: "C++"
+  commands:
+    - 
+scaffold:
+  directories:
+    - "src"
+    - "tests"
+    - "include"
+  files:
+    - path: "src/main.cpp"
+      content: "// Auto-generated entry point\n"
+
+agents:
+  git:
+    role: "Source Control"
+    constraints: ["ONLY use 'git' commands", "Do not write source code"]
+    responsibilities: "Keep track of changes, initialize repositories, and commit code when significant progress is made."
+  g++:
+    role: "Compiler"
+    constraints: ["ONLY use 'g++' commands", "Do not modify build scripts"]
+    responsibilities: "Compile C++ source files, diagnose compilation errors, and inform other programs of syntax issues."
+  cmake:
+    role: "Build Manager"
+    constraints: ["ONLY use 'cmake' and 'make' commands"]
+    responsibilities: "Generate build files (CMakeLists.txt) and manage the overarching build pipeline."

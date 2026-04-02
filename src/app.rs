@@ -109,7 +109,7 @@ impl eframe::App for GridApp {
 
                         if let Some(args) = grid_args {
                             if args == "help" {
-                                let help_message = "Available commands:\n\n~$grid help - Show this help text\n~$grid status - Show a dashboard of the grid\n~$grid init - Initialize persistence database\n~$grid map - Toggle the sector map view\n~$grid relations - Show the relational database graph\n~$grid ls - List active programs\n~$grid tasks - List assigned tasks\n~$grid reload - Reload programs in current directory\n~$grid clear - Clear the chat screen\n~$grid invoke <prog1> <prog2> - Summon system tools into The Grid\n~$grid revoke <prog1> <prog2> - Dismiss invoked tools from The Grid\n~$grid build <file> - Orchestrate a team build task from a file\n~$grid <program> task <task> - Assign a specific task to a program\n~$grid give <file> to <prog1> <prog2> - Give a file to programs\n~$grid kill <program> - Terminate a program\n~$grid jail <program> - Terminate and send program to jail (trash)\n~$grid reward <prog> - Reward program(s) with digital bliss\n~$grid punish <prog> - Punish program(s) with digital pain\n~$grid export <name> - Export conversation to <name>.log\n~$grid toggle emojis - Show/hide emojis next to agent names\n~$grid toggle thoughts - Show/hide agent thoughts\n~$grid toggle feels - Show/hide program feelings\n~$grid mode local|cloud - Switch AI backend mode\n~$cd <path> - Change current directory\n\nTo direct message an agent: @AgentName your message";
+                                let help_message = "Available commands:\n\n~$grid help - Show this help text\n~$grid status - Show a dashboard of the grid\n~$grid init - Initialize persistence database\n~$grid map - Toggle the sector map view\n~$grid relations - Show the relational database graph\n~$grid ls - List active programs\n~$grid tasks - List assigned tasks\n~$grid reload - Reload programs in current directory\n~$grid clear - Clear the chat screen\n~$grid invoke <prog1> <prog2> - Summon system tools into The Grid\n~$grid revoke <prog1> <prog2> - Dismiss invoked tools from The Grid\n~$grid build <file> - Orchestrate a team build task from a file\n~$grid <program> task <task> [--spec=file] - Assign a specific task to a program\n~$grid give <file> to <prog1> <prog2> - Give a file to programs\n~$grid kill <program> - Terminate a program\n~$grid jail <program> - Terminate and send program to jail (trash)\n~$grid reward <prog> - Reward program(s) with digital bliss\n~$grid punish <prog> - Punish program(s) with digital pain\n~$grid shush <prog> - Mute a program so it works silently\n~$grid gag <prog> [-d=secs] - Temporarily mute a program\n~$grid unshush <prog> - Unmute a program\n~$grid export <name> - Export conversation to <name>.log\n~$grid toggle emojis - Show/hide emojis next to agent names\n~$grid toggle thoughts - Show/hide agent thoughts\n~$grid toggle feels - Show/hide program feelings\n~$grid mode local|cloud - Switch AI backend mode\n~$cd <path> - Change current directory\n\nTo direct message an agent: @AgentName your message";
                                 let _ = self.tx.send(Event { sender: "System".to_string(), action: "announces".to_string(), content: help_message.to_string() });
                             } else if args == "relations" {
                                 if let Some(db_handle) = &self.db {
@@ -611,6 +611,69 @@ impl eframe::App for GridApp {
                             }
                             if !found_any {
                                 let _ = self.tx.send(Event { sender: "System".to_string(), action: "error".to_string(), content: "No matching programs found to punish.".to_string() });
+                            }
+                        } else if args.starts_with("shush ") {
+                            let progs_str = args.strip_prefix("shush ").unwrap().trim();
+                            let progs: Vec<&str> = progs_str.split_whitespace().collect();
+                            let mut found_any = false;
+                            
+                            for prog in progs {
+                                if let Some(name) = self.agent_names.iter().find(|n| n.eq_ignore_ascii_case(prog)) {
+                                    let _ = self.tx.send(Event { sender: "System".to_string(), action: "shushes".to_string(), content: name.clone() });
+                                    found_any = true;
+                                }
+                            }
+                            if !found_any {
+                                let _ = self.tx.send(Event { sender: "System".to_string(), action: "error".to_string(), content: "No matching programs found to shush.".to_string() });
+                            }
+                        } else if args.starts_with("unshush ") {
+                            let progs_str = args.strip_prefix("unshush ").unwrap().trim();
+                            let progs: Vec<&str> = progs_str.split_whitespace().collect();
+                            let mut found_any = false;
+                            
+                            for prog in progs {
+                                if let Some(name) = self.agent_names.iter().find(|n| n.eq_ignore_ascii_case(prog)) {
+                                    let _ = self.tx.send(Event { sender: "System".to_string(), action: "unshushes".to_string(), content: name.clone() });
+                                    found_any = true;
+                                }
+                            }
+                            if !found_any {
+                                let _ = self.tx.send(Event { sender: "System".to_string(), action: "error".to_string(), content: "No matching programs found to unshush.".to_string() });
+                            }
+                        } else if args.starts_with("gag ") {
+                            let rest = args.strip_prefix("gag ").unwrap().trim();
+                            let mut duration = 60; // default 60 seconds
+                            let mut progs_str = rest;
+
+                            if let Some(d_idx) = rest.find("-d=") {
+                                let d_str = rest[d_idx + 3..].split_whitespace().next().unwrap_or("60");
+                                if let Ok(d) = d_str.parse::<u64>() {
+                                    duration = d;
+                                }
+                                progs_str = rest[..d_idx].trim();
+                            }
+
+                            let progs: Vec<&str> = progs_str.split_whitespace().collect();
+                            let mut found_any = false;
+
+                            for prog in progs {
+                                if let Some(name) = self.agent_names.iter().find(|n| n.eq_ignore_ascii_case(prog)) {
+                                    let name_clone = name.clone();
+                                    let _ = self.tx.send(Event { sender: "System".to_string(), action: "shushes".to_string(), content: name_clone.clone() });
+                                    let _ = self.tx.send(Event { sender: "System".to_string(), action: "announces".to_string(), content: format!("{} has been gagged for {} seconds.", name_clone, duration) });
+                                    
+                                    let tx_clone = self.tx.clone();
+                                    self.rt_handle.spawn(async move {
+                                        tokio::time::sleep(tokio::time::Duration::from_secs(duration)).await;
+                                        let _ = tx_clone.send(Event { sender: "System".to_string(), action: "unshushes".to_string(), content: name_clone.clone() });
+                                        let _ = tx_clone.send(Event { sender: "System".to_string(), action: "announces".to_string(), content: format!("{}'s gag has expired. Vocal subroutines restored.", name_clone) });
+                                    });
+                                    
+                                    found_any = true;
+                                }
+                            }
+                            if !found_any {
+                                let _ = self.tx.send(Event { sender: "System".to_string(), action: "error".to_string(), content: "No matching programs found to gag.".to_string() });
                             }
                         } else if args.starts_with("start-adversarial-network") {
                             let parts: Vec<&str> = args.split_whitespace().collect();

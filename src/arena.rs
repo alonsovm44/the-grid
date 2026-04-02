@@ -161,7 +161,7 @@ pub async fn run_melee_game(p1: String, p2: String, tx: broadcast::Sender<Event>
         let mut self_stam_recover = 0;
         
         let mut is_blocking_opponent = if is_p1_turn { p2_is_blocking } else { p1_is_blocking };
-        let mut is_blocking_self = if is_p1_turn { p1_is_blocking } else { p2_is_blocking };
+        let mut is_blocking_self = false;
 
         let mut summary = match move_type.as_str() {
             "strike" => {

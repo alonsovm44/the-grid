@@ -1,0 +1,103 @@
+project:
+  name: "calcx"
+  description: "A simple CLI calculator program"
+  user: "alonso"
+  type: "cli"  # other option: "gui"
+  OS: ["windows", "mac", "linux"]
+
+stack:
+  - name: "git"
+    version: "latest"
+    job:
+      - "Make the project repo and commit changes automatically"
+    rank: 0
+
+  - name: "g++"
+    version: "latest"
+    job:
+      - "Write business logic and compile the project when called by Make"
+    rank: 1
+
+  - name: "make"
+    version: "latest"
+    job:
+      - "Generate the Makefile and build the project"
+    rank: 1
+
+commands:
+  add:
+    description: "Add two numbers"
+    args:
+      - name: "x1"
+        type: int
+        required: true
+      - name: "x2"
+        type: int
+        required: true
+    flags:
+      - name: "verbose"
+        type: bool
+        default: false
+    examples:
+      - "calcx add 3 2"
+      - "calcx add 10 5 --verbose"
+
+  sub:
+    description: "Subtract two numbers"
+    args:
+      - name: "x1"
+        type: int
+        required: true
+      - name: "x2"
+        type: int
+        required: true
+    flags: []
+    examples:
+      - "calcx sub 10 4"
+
+  mul:
+    description: "Multiply two numbers"
+    args:
+      - name: "x1"
+        type: int
+        required: true
+      - name: "x2"
+        type: int
+        required: true
+    flags: []
+    examples:
+      - "calcx mul 3 2"
+
+  div:
+    description: "Divide two numbers with zero division handling"
+    args:
+      - name: "numerator"
+        type: int
+        required: true
+      - name: "denominator"
+        type: int
+        required: true
+    flags:
+      - name: "precision"
+        type: int
+        default: 2
+    examples:
+      - "calcx div 10 2 --precision 3"
+      - "calcx div 5 0"
+
+features: 
+  - "addition"
+  - "subtraction"
+  - "multiplication"
+  - "division with 0 division handling"
+
+tests:
+  - "test addition with positive numbers"
+  - "test addition with negative numbers"
+  - "test subtraction with positive numbers"
+  - "test subtraction with negative numbers"
+  - "test multiplication with positive numbers"
+  - "test multiplication with negative numbers"
+  - "test division with positive numbers"
+  - "test division with negative numbers"
+  - "test division by zero handling"
