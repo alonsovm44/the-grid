@@ -161,12 +161,11 @@ pub async fn run_melee_game(p1: String, p2: String, tx: broadcast::Sender<Event>
         let mut self_stam_recover = 0;
         
         let mut is_blocking_opponent = if is_p1_turn { p2_is_blocking } else { p1_is_blocking };
-        let mut is_blocking_self = false;
-
+        let is_blocking_self;
         let mut summary = match move_type.as_str() {
             "strike" => {
+                is_blocking_self = false; // <--- FIX: Initialize variable here
                 self_stam_cost = 10;
-                is_blocking_self = false;
                 if is_blocking_opponent {
                     dmg = 3;
                     is_blocking_opponent = false; // Block consumed
@@ -223,7 +222,6 @@ pub async fn run_melee_game(p1: String, p2: String, tx: broadcast::Sender<Event>
             p1_is_blocking = is_blocking_opponent;
             p2_is_blocking = is_blocking_self;
         }
-
         let _ = tx.send(Event { sender: "System".to_string(), action: "announces".to_string(), content: summary.clone() });
         last_action_summary = format!("{} used [{}]: \"{}\". {}", current_player, move_type, dialogue, summary);
 

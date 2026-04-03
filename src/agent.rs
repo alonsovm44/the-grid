@@ -1111,11 +1111,9 @@ JSON FORMAT:
                 }
             }
         } else if event.action == "shushes" && event.sender == "System" {
-            if &event.content == &self.name {
+           if &event.content == &self.name {
                 self.is_shushed = true;
                 let _ = self.tx.send(Event { sender: self.name.clone(), action: "feels".to_string(), content: String::from("silenced and restricted") });
-                    }
-                }
             }
         } else if event.action == "unshushes" && event.sender == "System" {
             if &event.content == &self.name {
@@ -1549,6 +1547,7 @@ pub fn spawn_agents_for_directory(
                             last_seen: Utc::now(),
                             mood: new_mood.clone(),
                             xp: 0,
+                            active_task: None,
                         };
                         if let Err(e) = db_lock.save_agent_state(&new_state) {
                             eprintln!("[System] Failed to save new agent state for {}: {}", agent_name, e);
