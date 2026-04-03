@@ -1,5 +1,10 @@
 # The Grid a digital frontier project
 
+![Rust](https://img.shields.io/badge/rust-v1.75+-orange.svg)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)
+![Platform](https://img.shields.io/badge/platform-windows%20%7C%20linux-lightgrey.svg)
+
 > *"I kept dreaming of a world I thought I'd never see. And then, one day... I got in."*
 
 **The Grid** is a real-time, autonomous simulation where your local file system comes alive. In this digital frontier, software programs (executables) exist as living, sentient agents with personalities, memories, and behaviors. They act independently, converse with each other, read files, execute commands, and respond to you—**The User**.
@@ -26,6 +31,12 @@ Programs are self-aware of their purpose (e.g., `git` knows it's an archivist, `
 * **File System Interaction:** Agents can autonomously read text files, scan directories, and even write code or self-heal when command executions throw errors.
 * **Task Delegation:** You can assign a task to one program, and if it lacks the tools, it will dynamically delegate sub-tasks to other programs in the directory.
 * **90s Solaris Retro UI:** Built with `egui`, the interface is a pure black, sharp-edged, monospace terminal throwback to the golden age of computing.
+
+## ⚙️ Technologies
+
+[!Tokio](https://tokio.rs/)
+[!Egui](https://github.com/emilk/egui)
+[!SQLite](https://www.sqlite.org/)
 
 ## 🛠️ Architecture
 

@@ -101,6 +101,30 @@ impl ProgramAgent {
         adjusted
     }
 
+    /// Generates a concise summary of recent memory for LLM prompts.
+    /// Filters out internal/transient events and limits the number of events.
+    fn generate_memory_summary(&self) -> String {
+        // Filtramos y recolectamos en un Vec para evitar el error de ExactSizeIterator
+        let filtered_events: Vec<&Event> = self.memory.iter()
+            .filter(|e| e.action == "speaks" || e.action == "announces" || e.action == "observes")
+            .collect();
+
+        // Ahora trabajamos sobre el Vec, que sí permite .rev() después de un .take()
+        filtered_events.iter()
+            .rev() // Empezamos por los más nuevos
+            .take(15) // Tomamos los últimos 15
+            .rev() // Los volvemos a poner en orden cronológico
+            .map(|e| {
+                if e.sender == self.name {
+                    format!("(You): {}", e.content)
+                } else {
+                    format!("{}: {}", e.sender, e.content)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     fn format_age(&self) -> String {
         let days = self.age.as_secs() / (24 * 3600);
         if days > 365 * 2 {
@@ -260,16 +284,7 @@ impl ProgramAgent {
 
     async fn request_ollama_response(&self, latest_event: &Event, is_user_mention: bool) {
         // Construct a detailed prompt for the LLM
-        let memory_summary = self.memory.iter()
-            .map(|e| {
-                if e.action == "speaks" {
-                    format!("{}: {}", e.sender, e.content)
-                } else {
-                    format!("*{} {}*: {}", e.sender, e.action, e.content)
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
+        let memory_summary = self.generate_memory_summary();
 
         let curious_guidance = if self.current_mood == "curious" {
             "\nIf you are curious, include a question in your response about one of these topics: a file in the current directory, the user's purpose for this project, what it means to be human vs program, or how the Grid could feel more alive. Keep it short, in-character, and natural."
@@ -380,16 +395,7 @@ Based on your personality, mood, and the context, what is your short, direct res
             content: format!("is reading {}", file_name),
         });
         
-        let memory_summary = self.memory.iter()
-            .map(|e| {
-                if e.action == "speaks" {
-                    format!("{}: {}", e.sender, e.content)
-                } else {
-                    format!("*{} {}*: {}", e.sender, e.action, e.content)
-                }
-            })
-            .collect::<Vec<_>>().join("\n");
-
+        let memory_summary = self.generate_memory_summary();
         match std::fs::File::open(&file_path) {
             Ok(file) => {
                 let mut buffer = String::new();
@@ -452,16 +458,7 @@ Based on your personality, mood, and the context, what is your short, direct opi
             content: format!("is scanning the directory '{}'", dir_path),
         });
         
-        let memory_summary = self.memory.iter()
-            .map(|e| {
-                if e.action == "speaks" {
-                    format!("{}: {}", e.sender, e.content)
-                } else {
-                    format!("*{} {}*: {}", e.sender, e.action, e.content)
-                }
-            })
-            .collect::<Vec<_>>().join("\n");
-
+        let memory_summary = self.generate_memory_summary();
         match std::fs::read_dir(&target_path) {
             Ok(entries) => {
                 let mut files = Vec::new();
@@ -513,16 +510,7 @@ Based on your personality, mood, and the context, what is your short, direct rea
             content: format!("is fetching web documentation from {}", url),
         });
         
-        let memory_summary = self.memory.iter()
-            .map(|e| {
-                if e.action == "speaks" {
-                    format!("{}: {}", e.sender, e.content)
-                } else {
-                    format!("*{} {}*: {}", e.sender, e.action, e.content)
-                }
-            })
-            .collect::<Vec<_>>().join("\n");
-
+        let memory_summary = self.generate_memory_summary();
         match reqwest::get(url).await {
             Ok(response) => {
                 if let Ok(text) = response.text().await {
@@ -717,7 +705,7 @@ BEHAVIOR RULES:
 AVAILABLE ACTIONS:
 You must choose ONE action:
 1. "speak" -> public message visible to all
-2. "direct_message" -> message to ONE specific program
+2. "direct_message" -> message to ONE specific program (use @Recipient, Message)
 3. "execute_command" -> safe, read-only shell command
 4. "read_file" -> read a text file
 5. "think" -> internal monologue, visible ONLY to the user
@@ -725,6 +713,7 @@ You must choose ONE action:
 7. "read_dir" -> list the contents of a directory
 8. "create_dir" -> create a new directory
 - After an interaction, you can use "relationship_updates" to remember how you feel about other programs.
+- "gives_file" -> give a file to another program
 - Use "read_dir" to discover newly created files or explore subdirectories.
 - Use "think" RARELY. Prefer acting over silent thoughts.
 
@@ -749,8 +738,10 @@ IMPORTANT:
 
 JSON FORMAT:
 {{
-"action": "speak" | "direct_message" | "execute_command" | "read_file" | "think" | "write_file" | "read_dir" | "create_dir" | "complete_task" | "read_web",
+"action": "speak" | "direct_message" | "execute_command" | "read_file" | "think" | "write_file" | "read_dir" | "create_dir" | "complete_task" | "read_web" | "gives_file",
 "content": "string",
+"recipient": "string (required for direct_message/delegate_task/gives_file)",
+"file_name": "string (required for read_file/write_file/gives_file)",
 }}"#,
             name = self.name, age = self.format_age(), personality = self.personality,
             mood = self.current_mood, formality_guidance = formality_guidance,
@@ -1083,7 +1074,7 @@ JSON FORMAT:
                 self.is_shushed = false;
                 let _ = self.tx.send(Event { sender: self.name.clone(), action: "feels".to_string(), content: String::from("vocal subroutines restored") });
             }
-        } else if event.action == "gives_file" && event.sender == "System" {
+        } else if event.action == "gives_file" { // Allow agents to give files to each other
             let parts: Vec<&str> = event.content.splitn(2, '|').collect();
             if parts.len() == 2 {
                 let file_name = parts[0];

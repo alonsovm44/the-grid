@@ -19,3 +19,5 @@ Dev diary kept with Diaryx
 [2026-03-31 22:42:10] i might add soon digitization code, and perhaps think it better
 [2026-04-01 20:41:38] i plan to add a progress bar to project progress, even if it is an heuristic
 [2026-04-02 11:37:10] agent should check the output of a command like git add before git commits 
+[2026-04-02 15:15:27] ill add UI config menu
+[2026-04-02 22:13:11] i might add a UI config menu

@@ -1,0 +1,6 @@
+write a rust program that prints
+"hello from rust!"
+
+and compile it into
+
+"hello.exe"

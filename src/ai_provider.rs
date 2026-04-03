@@ -56,6 +56,41 @@ struct CustomCloudRequest<'a> {
     model: &'a str,
 }
 
+#[derive(Serialize)]
+struct GooglePart {
+    text: String,
+}
+
+#[derive(Serialize)]
+struct GoogleContent {
+    parts: Vec<GooglePart>,
+}
+
+#[derive(Serialize)]
+struct GoogleRequest {
+    contents: Vec<GoogleContent>,
+}
+
+#[derive(Deserialize)]
+struct GoogleResponse {
+    candidates: Vec<GoogleCandidate>,
+}
+
+#[derive(Deserialize)]
+struct GoogleCandidate {
+    content: GoogleResponseContent,
+}
+
+#[derive(Deserialize)]
+struct GoogleResponseContent {
+    parts: Vec<GoogleResponsePart>,
+}
+
+#[derive(Deserialize)]
+struct GoogleResponsePart {
+    text: String,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RelationshipUpdate {
     pub target: String,
@@ -97,12 +132,9 @@ pub fn execute_command_and_broadcast(command_str: String, tx: broadcast::Sender<
         });
 
         let output = if cfg!(target_os = "windows") {
-            Command::new("cmd")
-                .arg("/C")
-                // On Windows, cmd /C strips the first and last quote if both are present.
-                // To prevent this from breaking commands that use internal quotes (like paths with spaces),
-                // we wrap the entire command string in an extra set of quotes.
-                .arg(format!("\"{}\"", command_str))
+            Command::new("powershell")
+                .arg("-Command")
+                .arg(&command_str)
                 .output()
         } else {
             Command::new("sh")
@@ -176,20 +208,32 @@ pub async fn run_ai_engine(
                 let ollama_req = OllamaRequest { model: model_id, prompt: request.prompt.clone(), stream: false, format: if request.is_json_format { Some("json") } else { None } };
                 client.post(&local_config.api_url).json(&ollama_req).send().await
             } else { // "cloud"
-                if cloud_config.protocol == "openai" {
-                    let open_ai_req = OpenAiRequest { model: model_id, messages: vec![OpenAiMessage { role: "user", content: request.prompt.clone() }] };
-                    client.post(&cloud_config.api_url)
-                        .bearer_auth(&cloud_config.api_key)
-                        .json(&open_ai_req)
-                        .send()
-                        .await
-                } else { // "custom" protocol for apifreellm
-                    let custom_req = CustomCloudRequest { model: model_id, message: request.prompt.clone() };
-                    client.post(&cloud_config.api_url)
-                        .bearer_auth(&cloud_config.api_key)
-                        .json(&custom_req)
-                        .send()
-                        .await
+                match cloud_config.protocol.as_str() {
+                    "google" => {
+                        let google_req = GoogleRequest {
+                            contents: vec![GoogleContent {
+                                parts: vec![GooglePart { text: request.prompt.clone() }],
+                            }],
+                        };
+                        let url = format!("{}?key={}", cloud_config.api_url, cloud_config.api_key);
+                        client.post(url).json(&google_req).send().await
+                    }
+                    "openai" => {
+                        let open_ai_req = OpenAiRequest { model: model_id, messages: vec![OpenAiMessage { role: "user", content: request.prompt.clone() }] };
+                        client.post(&cloud_config.api_url)
+                            .bearer_auth(&cloud_config.api_key)
+                            .json(&open_ai_req)
+                            .send()
+                            .await
+                    }
+                    _ => { // "custom"
+                        let custom_req = CustomCloudRequest { model: model_id, message: request.prompt.clone() };
+                        client.post(&cloud_config.api_url)
+                            .bearer_auth(&cloud_config.api_key)
+                            .json(&custom_req)
+                            .send()
+                            .await
+                    }
                 }
             };
 
@@ -201,7 +245,14 @@ pub async fn run_ai_engine(
                         let text_result: Result<String, serde_json::Error> = if mode == "local" {
                             serde_json::from_str::<OllamaResponse>(&text).map(|r| r.response)
                         } else {
-                            if cloud_config.protocol == "openai" {
+                            if cloud_config.protocol == "google" {
+                                serde_json::from_str::<GoogleResponse>(&text).map(|r| {
+                                    r.candidates.first()
+                                        .and_then(|c| c.content.parts.first())
+                                        .map(|p| p.text.clone())
+                                        .unwrap_or_default()
+                                })
+                            } else if cloud_config.protocol == "openai" {
                                 serde_json::from_str::<OpenAiResponse>(&text).map(|r| r.choices.first().map_or("".to_string(), |c| c.message.content.clone()))
                             } else { // "custom" protocol
                                 serde_json::from_str::<serde_json::Value>(&text).map(|v| {
@@ -303,6 +354,17 @@ pub async fn run_ai_engine(
                                                         // Extract just the first letter (N, S, E, W) in case LLM gets wordy
                                                         let dir = content.trim().chars().next().unwrap_or(' ').to_string().to_uppercase();
                                                         let _ = tx_for_ai.send(Event { sender: request.agent_name.clone(), action: "plays_move".to_string(), content: dir });
+                                                    }
+                                                },
+                                                "gives_file" => {
+                                                    if let (Some(file_name), Some(recipient)) = (action.file_name, action.recipient) {
+                                                        let _ = tx_for_ai.send(Event {
+                                                            sender: request.agent_name.clone(),
+                                                            action: "gives_file".to_string(),
+                                                            content: format!("{}|{}", file_name, recipient),
+                                                        });
+                                                        // Optionally, an agent might also "speak" about giving the file
+                                                        if let Some(content) = action.content { let _ = tx_for_ai.send(Event { sender: request.agent_name.clone(), action: "speaks".to_string(), content }); }
                                                     }
                                                 },
                                             "melee_move" => {
