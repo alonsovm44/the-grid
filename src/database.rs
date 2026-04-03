@@ -12,6 +12,7 @@ pub struct AgentState {
     pub last_seen: DateTime<Utc>,
     pub mood: String,
     pub xp: u32,
+    pub active_task: Option<String>,
 }
 
 pub struct Database {
@@ -35,6 +36,7 @@ impl Database {
         // Attempt to add column in case the table already existed without it (migration)
         let _ = conn.execute("ALTER TABLE agents ADD COLUMN mood TEXT NOT NULL DEFAULT 'bored'", []);
         let _ = conn.execute("ALTER TABLE agents ADD COLUMN xp INTEGER NOT NULL DEFAULT 0", []);
+        let _ = conn.execute("ALTER TABLE agents ADD COLUMN active_task TEXT", []);
 
         // Add relationships table
         conn.execute(
@@ -55,7 +57,7 @@ impl Database {
             .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
 
         self.conn.execute(
-            "INSERT OR REPLACE INTO agents (name, personality, memory, last_seen, mood, xp) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT OR REPLACE INTO agents (name, personality, memory, last_seen, mood, xp, active_task) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 &state.name,
                 &state.personality,
@@ -63,18 +65,19 @@ impl Database {
                 &state.last_seen.to_rfc3339(),
                 &state.mood,
                 &state.xp,
+                &state.active_task,
             ],
         )?;
         Ok(())
     }
 
     pub fn get_agent_state(&self, name: &str) -> Result<Option<AgentState>> {
-        let mut stmt = self.conn.prepare("SELECT personality, memory, last_seen, mood, xp FROM agents WHERE name = ?1")?;
+        let mut stmt = self.conn.prepare("SELECT personality, memory, last_seen, mood, xp, active_task FROM agents WHERE name = ?1")?;
         
         if let Some(row_result) = stmt.query_map([name], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?))
         })?.next() {
-            let (personality, memory_json, last_seen_str, mood, xp): (String, String, String, String, u32) = row_result?;
+            let (personality, memory_json, last_seen_str, mood, xp, active_task): (String, String, String, String, u32, Option<String>) = row_result?;
             
             let memory: Vec<Event> = serde_json::from_str(&memory_json).unwrap_or_default();
             let last_seen = DateTime::parse_from_rfc3339(&last_seen_str)
@@ -88,6 +91,7 @@ impl Database {
                 last_seen,
                 mood,
                 xp,
+                active_task,
             }));
         }
 

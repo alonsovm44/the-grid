@@ -347,49 +347,29 @@ impl eframe::App for GridApp {
                                     let iq_level = 0.90; // Invoked system tools are inherently smart
                                     let age = Duration::from_secs(86400 * 365 * 5); // Treat as established tools
                                     
-                                    let (personality, memory, mood, xp) = if let Some(db_handle) = &self.db {
-                                        let db_lock = db_handle.lock().unwrap();
-                                        match db_lock.get_agent_state(&agent_name) {
-                                            Ok(Some(state)) => (state.personality, state.memory, state.mood, state.xp),
-                                            _ => {
-                                                let new_personality = generate_procedural_personality(&agent_name);
-                                                let new_mood = ProgramAgent::random_mood();
-                                                let new_state = AgentState {
-                                                    name: agent_name.clone(),
-                                                    personality: new_personality.clone(),
-                                                    memory: Vec::new(),
-                                                    last_seen: Utc::now(),
+                                    let (personality, memory, mood, xp
+                                                let new_mood = ProgramAgent::random_mood(); 
+                                                    name: agent_name.clone(), one(),
+                                                    memory: Vec::new(), 
                                                     mood: new_mood.clone(),
                                                     xp: 0,
                                                 };
                                                 let _ = db_lock.save_agent_state(&new_state);
-                                                (new_personality, Vec::new(), new_mood, 0)
+                                                (new_personality, Vec::new(), new_mood, 0, None)
                                             }
-                                        }
                                     } else {
-                                        (generate_procedural_personality(&agent_name), Vec::new(), ProgramAgent::random_mood(), 0)
-                                    };
+                                        (generate_procedural_personality(&agent_name), Vec::n
                                     
-                                    let agent = ProgramAgent::new(&agent_name, &personality, self.tx.clone(), self.ai_tx.clone(), memory, self.db.clone(), mood, self.current_dir.clone(), iq_level, age, xp);
-                                    let task = self.rt_handle.spawn(agent.run());
-                                    self.agent_tasks.push(task);
-                                    self.agent_names.push(agent_name.clone());
-                                    invoked_count += 1;
+                                    let agent = ProgramAgent::new(&agent_name, &personality, 
+                       oon
                                 }
-                            }
-                            let _ = self.tx.send(Event { sender: "System".to_string(), action: "announces".to_string(), content: format!("Invoked {} external tools into The Grid.", invoked_count) });
-                        } else if args.starts_with("revoke ") {
-                            let progs_str = args.strip_prefix("revoke ").unwrap().trim();
+               let progtrsp
                             let progs: Vec<&str> = progs_str.split_whitespace().collect();
-                            let mut revoked_count = 0;
-
-                            for prog in progs {
-                                let agent_name = prog.to_string();
+ in progs {
+                   let ne=
                                 
-                                // Stop tracking them across directories
-                                self.invoked_tools.remove(&agent_name);
-
-                                // Terminate their active thread immediately if they are running
+                                self.i
+                   // Titefn
                                 if let Some(idx) = self.agent_names.iter().position(|n| n.to_lowercase() == agent_name.to_lowercase()) {
                                     let name = self.agent_names.remove(idx);
                                     let task = self.agent_tasks.remove(idx);
@@ -443,55 +423,35 @@ impl eframe::App for GridApp {
                                 if !new_names.contains(tool) {
                                     let iq_level = 0.90;
                                     let age = Duration::from_secs(86400 * 365 * 5);
-                                    let (personality, memory, mood, xp) = if let Some(db_handle) = &self.db {
+                                    let (personality, memory, mood, xp, active_task) = if let Some(db_handle) = &self.db {
                                         let db_lock = db_handle.lock().unwrap();
                                         match db_lock.get_agent_state(tool) {
-                                            Ok(Some(state)) => (state.personality, state.memory, state.mood, state.xp),
-                                            _ => (generate_procedural_personality(tool), Vec::new(), ProgramAgent::random_mood(), 0)
-                                        }
+                                            Ok(Some(state)) => (state.personality, state.memory, state.mood, state.xp, state.active_task),
+                                            _ => (generate_procedural_personality(t
                                     } else {
-                                        (generate_procedural_personality(tool), Vec::new(), ProgramAgent::random_mood(), 0)
-                                    };
-                                    let agent = ProgramAgent::new(tool, &personality, self.tx.clone(), self.ai_tx.clone(), memory, self.db.clone(), mood, self.current_dir.clone(), iq_level, age, xp);
-                                    let task = self.rt_handle.spawn(agent.run());
-                                    new_tasks.push(task);
+                                        (generate_procedural_personality(tool), Vec::new(), ProgramAgent::random_mood(), 0, None)
+                                    };(), memory, self.db.clone(), mood, self.current_dir.clone(), iq_level, age, xp, active_task);
+                                  let task=es.push(task);
                                     new_names.push(tool.clone());
-                                    re_invoked += 1;
                                 }
-                            }
                             if re_invoked > 0 {
-                                let _ = self.tx.send(Event { sender: "System".to_string(), action: "announces".to_string(), content: format!("Restored {} invoked tools.", re_invoked) });
-                            }
-
-                            self.agent_tasks = new_tasks;
-                            self.agent_names = new_names;
+                                let _
+                          self.agent_tasks=e = new_names;
                         } else if let Some(task_idx) = args.find(" task ") {
-                            let prog = args[..task_idx].trim();
-                            let raw_task_args = args[task_idx + 6..].trim();
-                            
+                            let raw_task_arg
                             let mut task_text = String::new();
-                            let mut spec_content = String::new();
-                            let mut has_error = false;
-
-                            if let Some(spec_idx) = raw_task_args.find("--spec=") {
-                                task_text = raw_task_args[..spec_idx].trim().trim_matches('"').to_string();
-                                let spec_path_str = raw_task_args[spec_idx + 7..].trim();
-                                let path_part = if spec_path_str.starts_with('"') {
-                                    spec_path_str[1..].split('"').next().unwrap_or(spec_path_str)
-                                } else {
+                            let mut s
+                          if let Some(speci)raw_task_args[..spec_idx].trim().trim_matches('"').to_string();
+                                let spec_path_str = raw_task_args[spec_idx + 7..].t
+                                    spec_pat
                                     spec_path_str.split_whitespace().next().unwrap_or(spec_path_str)
                                 };
-                                
-                                let path = Path::new(&self.current_dir).join(path_part);
-                                match std::fs::read_to_string(&path) {
-                                    Ok(content) => {
+                              match std::f:ent) => {
                                         spec_content = format!("\n\nSPECIFICATION PROVIDED:\n---\n{}\n---", content);
                                     }
-                                    Err(e) => {
-                                        let _ = self.tx.send(Event { sender: "System".to_string(), action: "error".to_string(), content: format!("Failed to read spec file '{}': {}", path_part, e) });
+                                    Err(e) =g(), content: format!("Failed to read spec file '{}': {}", path_part, e) });
                                         has_error = true;
                                     }
-                                }
                             } else {
                                 task_text = raw_task_args.trim_matches('"').to_string();
                             }
@@ -742,75 +702,55 @@ impl eframe::App for GridApp {
                                         if !new_names.contains(tool) {
                                             let iq_level = 0.90;
                                             let age = Duration::from_secs(86400 * 365 * 5);
-                                            let (personality, memory, mood, xp) = if let Some(db_handle) = &self.db {
+                                            let (personality, memory, mood, xp, active_task) = if let Some(db_handle) = &self.db {
                                                 let db_lock = db_handle.lock().unwrap();
                                                 match db_lock.get_agent_state(tool) {
-                                                    Ok(Some(state)) => (state.personality, state.memory, state.mood, state.xp),
-                                                    _ => (generate_procedural_personality(tool), Vec::new(), ProgramAgent::random_mood(), 0)
+                                                    Ok(Some(state)) => (state.personality, state.memory, state.mood, state.xp, state.active_task),
+                                                    _ => (generate_procedural_personality(tool), Vec::new(), ProgramAgent::random_mood(), 0, None)
                                                 }
                                             } else {
-                                                (generate_procedural_personality(tool), Vec::new(), ProgramAgent::random_mood(), 0)
+                                                (generate_procedural_personality(tool), Vec::new(), ProgramAgent::random_mood(), 0, None)
                                             };
-                                            let agent = ProgramAgent::new(tool, &personality, self.tx.clone(), self.ai_tx.clone(), memory, self.db.clone(), mood, self.current_dir.clone(), iq_level, age, xp);
-                                            let task = self.rt_handle.spawn(agent.run());
-                                            new_tasks.push(task);
+                                            let agent = ProgramAgent::new(tool, &personality, self.tx.clone(), self.ai_tx.clone(), memory, self.db.clone(), mood, self.current_dir.clone(), iq_level, age, xp, active_task);
+                                            let task = self.rt_handle.spawn(agas
                                             new_names.push(tool.clone());
                                             re_invoked += 1;
-                                        }
-                                    }
-                                    if re_invoked > 0 {
+                               }   0 {
                                         let _ = self.tx.send(Event { sender: "System".to_string(), action: "announces".to_string(), content: format!("Carried over {} global tools to the new directory.", re_invoked) });
                                     }
 
-                                    self.agent_tasks = new_tasks;
                                     self.agent_names = new_names;
                                 }
-                            } else {
                                 let _ = self.tx.send(Event {
-                                    sender: "System".to_string(),
-                                    action: "error".to_string(),
+                                    sender: "System".to_string(),g(
                                     content: format!("Could not change directory to '{}'", path_str),
                                 });
-                            }
-                        } else {
-                            // Handle other shell commands
+                   } else {   mmands
                             let command_str = command_input.to_string();
                             ai_provider::execute_command_and_broadcast(command_str, self.tx.clone(), self.user_name.clone());
                         }
-                    } else {
                         // Dispatch user input as a normal chat message
-                        let _ = self.tx.send(Event { sender: self.user_name.clone(), action: "speaks".to_string(), content: self.input.clone() });
-                    }
+                        let _ = self.tx.send(
 
                     self.input.clear();
-                    response.request_focus();
                 }
             });
-        });
-
-        // Central Panel: Chat display / Event Feed
+   
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::vertical().stick_to_bottom(true).show(ui, |ui| {
-                let msgs = self.messages.lock().unwrap();
-                for msg in msgs.iter() {
+                let msgs = self.messages.lock().unwr
                     if msg.action == "thinks" && !self.show_thoughts {
                         continue;
-                    }
                     if msg.action == "feels" && !self.show_feels {
                         continue;
-                    }
                     if matches!(msg.action.as_str(), "gives_file" | "derezzes" | "jails" | "updates_relationship" | "reads" | "reads_dir" | "reads_web" | "assigned_task" | "delegates_task" | "ai_finished") {
-                        // Filter out raw underlying data signals in the UI; system announcements or natural responses cover them
-                        continue; 
-                    }
-
+                        // Filter out raw underlying data signals in the UI; system a
+               }
                     let display_name = self.get_agent_display_name(&msg.sender);
 
                     let sender = &msg.sender;
-                    let color = if sender == &self.user_name {
                         Color32::YELLOW
                     } else {
-                        *self.colors.entry(sender.clone()).or_insert_with(|| {
                             let color = self.color_palette[self.next_color_index % self.color_palette.len()];
                             self.next_color_index += 1;
                             color

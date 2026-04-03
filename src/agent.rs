@@ -28,6 +28,7 @@ pub struct ProgramAgent {
     formality: f32, // 0.0 = very casual/colloquial, 1.0 = very formal
     age: Duration,
     xp: u32,
+    active_task: Option<String>,
     is_busy: bool,
     is_shushed: bool,
 }
@@ -101,6 +102,34 @@ impl ProgramAgent {
         adjusted
     }
 
+    /// Prunes the agent's memory to prevent bloat.
+    /// Prioritizes removing low-importance events (feels, observes, announces) 
+    /// before removing conversations or tasks.
+    fn enforce_memory_limit(&mut self) {
+        const MAX_MEMORY: usize = 50;
+        if self.memory.len() < MAX_MEMORY {
+            return;
+        }
+
+        // Step 1: Remove "low importance" events that are older than the last 10 messages.
+        let mut i = 0;
+        let recent_threshold = self.memory.len().saturating_sub(10);
+        
+        while i < recent_threshold && self.memory.len() >= MAX_MEMORY {
+            let action = &self.memory[i].action;
+            if action == "feels" || action == "observes" || action == "announces" {
+                self.memory.remove(i);
+            } else {
+                i += 1;
+            }
+        }
+
+        // Step 2: If still over limit, perform standard FIFO (remove oldest)
+        while self.memory.len() >= MAX_MEMORY {
+            self.memory.remove(0);
+        }
+    }
+
     /// Generates a concise summary of recent memory for LLM prompts.
     /// Filters out internal/transient events and limits the number of events.
     fn generate_memory_summary(&self) -> String {
@@ -115,10 +144,12 @@ impl ProgramAgent {
             .take(15) // Tomamos los últimos 15
             .rev() // Los volvemos a poner en orden cronológico
             .map(|e| {
+                // Truncate very long content (like file reads) in the prompt to avoid bloat
+                let content = if e.content.len() > 500 { format!("{}... [TRUNCATED]", &e.content[..500]) } else { e.content.clone() };
                 if e.sender == self.name {
-                    format!("(You): {}", e.content)
+                    format!("(You): {}", content)
                 } else {
-                    format!("{}: {}", e.sender, e.content)
+                    format!("{}: {}", e.sender, content)
                 }
             })
             .collect::<Vec<_>>()
@@ -144,7 +175,7 @@ impl ProgramAgent {
         }
     }
 
-    pub fn new(name: &str, personality: &str, tx: broadcast::Sender<Event>, ai_tx: mpsc::Sender<AiRequest>, memory: Vec<Event>, db: Option<Arc<Mutex<Database>>>, current_mood: String, current_dir: String, iq_level: f32, age: Duration, xp: u32) -> Self {
+    pub fn new(name: &str, personality: &str, tx: broadcast::Sender<Event>, ai_tx: mpsc::Sender<AiRequest>, memory: Vec<Event>, db: Option<Arc<Mutex<Database>>>, current_mood: String, current_dir: String, iq_level: f32, age: Duration, xp: u32, active_task: Option<String>) -> Self {
         let formality = Self::calculate_formality(personality);
         let relationships = if let Some(db_handle) = &db {
             db_handle.lock().unwrap().get_relationships(name).unwrap_or_default()
@@ -166,6 +197,7 @@ impl ProgramAgent {
             relationships,
             age,
             xp,
+            active_task,
             is_busy: false,
             is_shushed: false,
         }
@@ -187,9 +219,7 @@ impl ProgramAgent {
                 Ok(event) = self.rx.recv() => {
                     // Add event to memory, keeping it to a certain size. Ignore private thoughts and typing indicators.
                     if event.action != "thinks" && event.action != "is_typing" && event.action != "stops_typing" {
-                        if self.memory.len() >= 50 {
-                            self.memory.remove(0);
-                        }
+                        self.enforce_memory_limit();
                         self.memory.push(event.clone());
                         self.save_state();
                     }
@@ -215,6 +245,12 @@ impl ProgramAgent {
                         if let Ok(update) = serde_json::from_str::<ai_provider::RelationshipUpdate>(&event.content) {
                             self.update_relationship(&update.target, update.change);
                         }
+                    }
+
+                    // Clear task if we finished it
+                    if event.sender == self.name && event.action == "completes_task" {
+                        self.active_task = None;
+                        self.save_state();
                     }
 
                     if event.sender == self.name && event.action == "ai_finished" {
@@ -267,6 +303,7 @@ impl ProgramAgent {
                 last_seen: Utc::now(),
                 mood: self.current_mood.clone(),
                 xp: self.xp,
+                active_task: self.active_task.clone(),
             };
             if let Err(e) = db_handle.lock().unwrap().save_agent_state(&state) {
                 eprintln!("[{}] Failed to save state: {}", self.name, e);
@@ -674,6 +711,7 @@ Based on your personality, mood, and the context, what is your short, direct rea
 - You represent the "{name}" tool. When using "execute_command", you must ONLY run commands specific to your domain (e.g., if you are 'git', run 'git' commands).
 - If you are a custom tool or do not know your commands, use "execute_command" to run '{name} --help' to learn your capabilities.
 - If a task requires a different tool or general shell manipulation, you MUST use "delegate_task" to hand it off to the correct program.
+- If you are a Project Lead, your primary job is to DELEGATE. If other programs ask for work, give them sub-tasks immediately using "delegate_task".
 - All programs are fully authorized to use "write_file" to write configuration, text, or source code."#, name = self.name);
 
         let prompt = format!(
@@ -818,11 +856,13 @@ JSON FORMAT:
 - You represent the '{}' tool. When using \"execute_command\", you must ONLY run commands specific to your domain.
 - If you are a custom tool, use \"execute_command\" to run '{} --help'.
 - If a task requires a different tool, you MUST use \"delegate_task\".
+- If you are the Project Lead, do not do all the work. Distribute tasks to the available programs listed below.
 - All programs are fully authorized to use \"write_file\".", self.name, self.name
         );
 
         let prompt = format!(r#"You are {name}, an autonomous program on The Grid.
             Personality: {personality}
+            Role: You are currently focused on a workload. Efficiency is mandatory.
 
             RECENT CONVERSATION HISTORY:
             ---
@@ -832,6 +872,7 @@ JSON FORMAT:
             *** DIRECT TASK ASSIGNMENT ***
             {specialized_guidance}
             Task: "{task}"
+            Status: You must persist in this task until it is fully resolved. Do not engage in idle chatter.
             You MUST execute this task or take the most logical first step towards it right now.
 
             AVAILABLE ACTIONS (Choose ONE):
@@ -1047,6 +1088,11 @@ JSON FORMAT:
                 base_prob = (base_prob - 0.2).max(0.0);
             }
 
+            // If busy with a task, drastically reduce the chance to respond to random chatter
+            if self.active_task.is_some() && !is_mentioned {
+                base_prob *= 0.1;
+            }
+
             // Generate random decision before await. gen_bool expects f64.
             let is_direct_message = content.contains('@');
             let should_respond_random = rand::thread_rng().gen_bool(base_prob as f64);
@@ -1068,6 +1114,8 @@ JSON FORMAT:
             if &event.content == &self.name {
                 self.is_shushed = true;
                 let _ = self.tx.send(Event { sender: self.name.clone(), action: "feels".to_string(), content: String::from("silenced and restricted") });
+                    }
+                }
             }
         } else if event.action == "unshushes" && event.sender == "System" {
             if &event.content == &self.name {
@@ -1120,6 +1168,7 @@ JSON FORMAT:
                 if self.name == target {
                     if !self.is_busy {
                         self.is_busy = true;
+                        self.active_task = Some(task_desc.to_string());
                         let full_task = format!("The User has assigned you this task: {}", task_desc);
                         self.execute_assigned_task(&full_task).await;
                     }
@@ -1133,6 +1182,7 @@ JSON FORMAT:
                 if self.name == target {
                     if !self.is_busy {
                         self.is_busy = true;
+                        self.active_task = Some(task_desc.to_string());
                         let full_task = format!("Program \"{}\" delegated this sub-task to you: {}", event.sender, task_desc);
                         self.execute_assigned_task(&full_task).await;
                     }
@@ -1275,6 +1325,16 @@ JSON FORMAT:
     async fn autonomous_action(&mut self, lag: f32) {
         if self.is_busy {
             return;
+        }
+
+        // If we have an active task, we have a high chance of continuing to work on it
+        if let Some(task) = &self.active_task {
+            if rand::thread_rng().gen_bool(0.8) {
+                self.is_busy = true;
+                let work_prompt = format!("CURRENT TASK PROGRESSION: {}. Continue working or delegate sub-tasks.", task);
+                self.execute_assigned_task(&work_prompt).await;
+                return;
+            }
         }
 
         // Generate random decisions before any await
@@ -1471,12 +1531,12 @@ pub fn spawn_agents_for_directory(
                 .and_then(|ct| SystemTime::now().duration_since(ct).ok())
                 .unwrap_or_else(|| Duration::from_secs(0));
 
-            let (personality, memory, mood, xp) = if let Some(db_handle) = &db {
+            let (personality, memory, mood, xp, active_task) = if let Some(db_handle) = &db {
                 let db_lock = db_handle.lock().unwrap();
                 match db_lock.get_agent_state(&agent_name) {
                     Ok(Some(state)) => {
                         // Agent exists, load its state
-                        (state.personality, state.memory, state.mood, state.xp)
+                        (state.personality, state.memory, state.mood, state.xp, state.active_task)
                     }
                     _ => {
                         // New agent or DB error, create new state
@@ -1493,15 +1553,15 @@ pub fn spawn_agents_for_directory(
                         if let Err(e) = db_lock.save_agent_state(&new_state) {
                             eprintln!("[System] Failed to save new agent state for {}: {}", agent_name, e);
                         }
-                        (new_personality, Vec::new(), new_mood, 0)
+                        (new_personality, Vec::new(), new_mood, 0, None)
                     }
                 }
             } else {
                 // No database, use default behavior
-                (generate_procedural_personality(&agent_name), Vec::new(), ProgramAgent::random_mood(), 0)
+                (generate_procedural_personality(&agent_name), Vec::new(), ProgramAgent::random_mood(), 0, None)
             };
             
-            let agent = ProgramAgent::new(&agent_name, &personality, tx.clone(), ai_tx.clone(), memory, db.clone(), mood, path.to_string(), iq_level, age, xp);
+            let agent = ProgramAgent::new(&agent_name, &personality, tx.clone(), ai_tx.clone(), memory, db.clone(), mood, path.to_string(), iq_level, age, xp, active_task);
             let task = rt_handle.spawn(agent.run());
             tasks.push(task);
             names.push(agent_name.clone());
