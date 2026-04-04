@@ -1,4 +1,4 @@
-# The Grid: Architectural Insights for an AI Meta-OS
+# The Grid: Architectural Insights for a Cognitive Operative Systems
 
 1. Concept: The Meta-OS
 

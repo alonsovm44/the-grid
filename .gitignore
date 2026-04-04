@@ -1,31 +1,9 @@
-# Rust build artifacts
-/target/
-Cargo.lock
+/target
 
-# The Grid runtime files
 config.json
-config.toml
+
+*.exe
+
 the_grid.db
 
-# Development artifacts
-*.log
-*.fasta
 laserc/
-sandbox/
-
-# OS-specific files
-*.exe
-*.pdb
-*.dll
-*.so
-*.dylib
-
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Backup files
-*.bak
-*.backup
