@@ -1,9 +1,0 @@
-PS C:\Users\diego\.projects\TheGrid> laserc bin/LLLaserControl --ok 1 ecoli.fasta 
-> OPTICAL KEY 1 ACCEPTED: Engaging Inward Scatter (Digitization)...
-> Aperture clear: proceed? (y/n): y
-> Transcribing ecoli.fasta into ecoli.exe...
-> Genome hashed. Deterministic Seed: [54, d4, 29, 18, 8, f1, b9, a0, 6c, 84, 1e, 34, 41, b0, 33, 37, 22, 5b, be, 89, e3, b7, 68, 1d, 1f, a, 74, f9, 
-31, ad, 15, bc]
-> Source successfully written to ecoli.rs
-> Compiling ecoli.rs into native executable...
-# my compute crashed, no executable binary for now

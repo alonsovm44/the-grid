@@ -2,6 +2,20 @@
 name = "the-grid"
 version = "0.1.0"
 edition = "2021"
+authors = ["Alonso Velazquez <alonsovm443@outlook.com>"]
+description = "A real-time autonomous simulation where your local file system comes alive with sentient AI programs"
+license = "MIT"
+repository = "https://github.com/alonsovm44/the-grid"
+homepage = "https://github.com/alonsovm44/the-grid"
+documentation = "https://docs.rs/the-grid"
+keywords = ["ai", "simulation", "autonomous", "multi-agent", "llm"]
+categories = ["simulation", "command-line-utilities", "development-tools"]
+readme = "README.md"
+rust-version = "1.75"
+
+[[bin]]
+name = "the-grid"
+path = "src/main.rs"
 
 [dependencies]
 tokio = { version = "1.35", features = ["full"] }
