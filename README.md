@@ -1,4 +1,5 @@
 # The Grid: Where Your Filesystem Comes Alive
+See sessions screenshots in assets/ folder
 
 ![Rust](https://img.shields.io/badge/rust-v1.75+-orange.svg)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
