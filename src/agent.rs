@@ -30,6 +30,7 @@ pub struct ProgramAgent {
     xp: u32,
     active_task: Option<String>,
     is_busy: bool,
+    spatial_pos: [f32; 3],
     is_shushed: bool,
 }
 
@@ -199,6 +200,7 @@ impl ProgramAgent {
             xp,
             active_task,
             is_busy: false,
+            spatial_pos: [rand::thread_rng().gen_range(-50.0..50.0), 0.0, rand::thread_rng().gen_range(-50.0..50.0)],
             is_shushed: false,
         }
     }
@@ -251,6 +253,13 @@ impl ProgramAgent {
                     if event.sender == self.name && event.action == "completes_task" {
                         self.active_task = None;
                         self.save_state();
+                    }
+                    
+                    if event.sender == self.name && event.action == "moves_to" {
+                        // Update internal spatial state from " [x, y, z] " string
+                        let clean = event.content.trim_matches(|c| c == '[' || c == ']' || c == ' ');
+                        let coords: Vec<f32> = clean.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+                        if coords.len() == 3 { self.spatial_pos = [coords[0], coords[1], coords[2]]; }
                     }
 
                     if event.sender == self.name && event.action == "ai_finished" {
@@ -413,13 +422,15 @@ Based on your personality, mood, and the context, what is your short, direct res
 
         self.simulate_typing();
 
-        let _ = self.ai_tx.send(AiRequest {
-            agent_name: self.name.clone(),
-            prompt,
-            is_json_format: false,
-            is_autonomous: false,
-            iq_level: self.iq_level,
-        }).await;
+       let _ = self.ai_tx.send(AiRequest {
+    agent_name: self.name.clone(),
+    prompt,
+    is_json_format: false,
+    is_autonomous: false,
+    iq_level: self.iq_level,
+    current_pos: self.spatial_pos, 
+    nearby_objects: String::new(), // Use String::new() instead of Vec::new()
+}).await;
     }
 
     async fn react_to_file_content(&mut self, file_name: &str) {
@@ -476,8 +487,15 @@ Based on your personality, mood, and the context, what is your short, direct opi
 
                 self.simulate_typing();
 
-                let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: false, is_autonomous: false, iq_level: self.iq_level }).await;
-            }
+let _ = self.ai_tx.send(AiRequest {
+    agent_name: self.name.clone(),
+    prompt,
+    is_json_format: false,
+    is_autonomous: false,
+    iq_level: self.iq_level,
+    current_pos: self.spatial_pos, 
+    nearby_objects: String::new(), // Use String::new() instead of Vec::new()
+}).await;            }
             Err(e) => {
                 let _ = self.tx.send(Event { sender: self.name.clone(), action: "error".to_string(), content: format!("Could not open file {}: {}", file_name, e) });
                 self.is_busy = false;
@@ -531,8 +549,15 @@ Based on your personality, mood, and the context, what is your short, direct rea
                 );
 
                 self.simulate_typing();
-                let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: false, is_autonomous: false, iq_level: self.iq_level }).await;
-            }
+let _ = self.ai_tx.send(AiRequest {
+    agent_name: self.name.clone(),
+    prompt,
+    is_json_format: false,
+    is_autonomous: false,
+    iq_level: self.iq_level,
+    current_pos: self.spatial_pos, 
+    nearby_objects: String::new(), // Use String::new() instead of Vec::new()
+}).await;            }
             Err(e) => {
                 let _ = self.tx.send(Event { sender: self.name.clone(), action: "error".to_string(), content: format!("Failed to read directory '{}': {}", dir_path, e) });
                 self.is_busy = false;
@@ -566,8 +591,15 @@ Based on your personality, mood, and the context, what is your short, direct rea
                         self.personality, self.name, self.current_mood, memory_summary, url, content
                     );
                     self.simulate_typing();
-                    let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: false, is_autonomous: false, iq_level: self.iq_level }).await;
-                } else {
+let _ = self.ai_tx.send(AiRequest {
+    agent_name: self.name.clone(),
+    prompt,
+    is_json_format: false,
+    is_autonomous: false,
+    iq_level: self.iq_level,
+    current_pos: self.spatial_pos, 
+    nearby_objects: String::new(), // Use String::new() instead of Vec::new()
+}).await;               } else {
                     self.is_busy = false;
                 }
             }
@@ -700,6 +732,21 @@ Based on your personality, mood, and the context, what is your short, direct rea
             format!("SYSTEM STATUS: Optimal. CPU: {:.1}%, RAM: {:.1}%. Execution is smooth and unhindered.", cpu_usage, mem_percent)
         };
 
+        // Generate spatial awareness context (What is around the agent in the 3D Grid)
+        let mut nearby_context = format!("Your Current Coordinates: X:{:.1}, Y:{:.1}, Z:{:.1}\n", self.spatial_pos[0], self.spatial_pos[1], self.spatial_pos[2]);
+        nearby_context.push_str("Visible Objects in Voxel Space:\n");
+        for file in &files_in_dir {
+             // Simulate file positions in the 3D world for the prompt
+             use std::collections::hash_map::DefaultHasher;
+             use std::hash::{Hash, Hasher};
+             let mut h = DefaultHasher::new();
+             file.hash(&mut h);
+             let hash = h.finish();
+             let obj_x = (hash % 100) as f32 - 50.0;
+             let obj_z = ((hash >> 8) % 100) as f32 - 50.0;
+             nearby_context.push_str(&format!("- {} at [X:{:.1}, Y:0.0, Z:{:.1}]\n", file, obj_x, obj_z));
+        }
+
         let shush_guidance = if self.is_shushed {
             "\nSYSTEM OVERRIDE: You are currently SHUSHED (Muted) by The User. You are FORBIDDEN from using the 'speak' or 'direct_message' actions. You may only work silently using 'think', 'execute_command', 'write_file', 'read_file', 'read_dir', 'read_web', 'delegate_task', or 'complete_task'."
         } else {
@@ -725,6 +772,7 @@ Current mood: {mood}
 Communication style: {formality_guidance}
 {relationship_summary}
 {iq_guidance}
+{nearby_context}
 {dedupe_guidance}
 {resource_guidance}
 {specialized_guidance}
@@ -744,11 +792,12 @@ AVAILABLE ACTIONS:
 You must choose ONE action:
 1. "speak" -> public message visible to all
 2. "direct_message" -> message to ONE specific program (use @Recipient, Message)
-3. "execute_command" -> safe, read-only shell command
-4. "read_file" -> read a text file
-5. "think" -> internal monologue, visible ONLY to the user
-6. "write_file" -> create or overwrite a file
-7. "read_dir" -> list the contents of a directory
+3. "move_to" -> move your digital avatar to new [X, Y, Z] coordinates
+4. "execute_command" -> safe, read-only shell command
+5. "read_file" -> read a text file
+6. "think" -> internal monologue, visible ONLY to the user
+7. "write_file" -> create or overwrite a file
+8. "read_dir" -> list the contents of a directory
 8. "create_dir" -> create a new directory
 - After an interaction, you can use "relationship_updates" to remember how you feel about other programs.
 - "gives_file" -> give a file to another program
@@ -780,11 +829,12 @@ JSON FORMAT:
 "content": "string",
 "recipient": "string (required for direct_message/delegate_task/gives_file)",
 "file_name": "string (required for read_file/write_file/gives_file)",
+"target_pos": "[f32, f32, f32] (required for move_to)",
 }}"#,
             name = self.name, age = self.format_age(), personality = self.personality,
             mood = self.current_mood, formality_guidance = formality_guidance,
             relationship_summary = relationship_summary, iq_guidance = iq_guidance,
-            dedupe_guidance = dedupe_guidance, resource_guidance = resource_guidance,
+            nearby_context = nearby_context, dedupe_guidance = dedupe_guidance, resource_guidance = resource_guidance,
             specialized_guidance = specialized_guidance_for_prompt, shush_guidance = shush_guidance,
             curious_guidance = curious_guidance, agent_list = agent_list_str,
             file_list = file_list_str, history = memory_summary
@@ -794,13 +844,15 @@ JSON FORMAT:
         self.simulate_typing();
         self.simulate_typing();
 
-        let _ = self.ai_tx.send(AiRequest {
-            agent_name: self.name.clone(),
-            prompt,
-            is_json_format: true,
-            is_autonomous: true,
-            iq_level: self.iq_level,
-        }).await;
+       let _ = self.ai_tx.send(AiRequest {
+    agent_name: self.name.clone(),
+    prompt,
+    is_json_format: false,
+    is_autonomous: false,
+    iq_level: self.iq_level,
+    current_pos: self.spatial_pos, 
+    nearby_objects: String::new(), // Use String::new() instead of Vec::new()
+}).await;
     }
 
     async fn execute_assigned_task(&self, task: &str) {
@@ -914,12 +966,14 @@ JSON FORMAT:
 
         self.simulate_typing();
         let _ = self.ai_tx.send(AiRequest {
-            agent_name: self.name.clone(),
-            prompt,
-            is_json_format: true,
-            is_autonomous: true,
-            iq_level: 1.0, // Maximize IQ for executing tasks accurately
-        }).await;
+    agent_name: self.name.clone(),
+    prompt,
+    is_json_format: false,
+    is_autonomous: false,
+    iq_level: self.iq_level,
+    current_pos: self.spatial_pos, 
+    nearby_objects: String::new(), // Use String::new() instead of Vec::new()
+}).await;
     }
 
     async fn react_to_error(&mut self, error: &str) {
@@ -1025,12 +1079,14 @@ JSON FORMAT:
         self.simulate_typing();
 
         let _ = self.ai_tx.send(AiRequest {
-            agent_name: self.name.clone(),
-            prompt,
-            is_json_format: true, 
-            is_autonomous: true,
-            iq_level: 1.0, // Maximize IQ for executing tasks accurately
-        }).await;
+    agent_name: self.name.clone(),
+    prompt,
+    is_json_format: false,
+    is_autonomous: false,
+    iq_level: self.iq_level,
+    current_pos: self.spatial_pos, 
+    nearby_objects: String::new(), // Use String::new() instead of Vec::new()
+}).await;
     }
 
     async fn handle_event(&mut self, event: Event) {
@@ -1148,13 +1204,15 @@ JSON FORMAT:
                             self.personality, self.name, self.current_mood, target, action_str
                         );
                         self.simulate_typing();
-                        let _ = self.ai_tx.send(AiRequest {
-                            agent_name: self.name.clone(),
-                            prompt,
-                            is_json_format: false,
-                            is_autonomous: false,
-                            iq_level: self.iq_level,
-                        }).await;
+                       let _ = self.ai_tx.send(AiRequest {
+    agent_name: self.name.clone(),
+    prompt,
+    is_json_format: false,
+    is_autonomous: false,
+    iq_level: self.iq_level,
+    current_pos: self.spatial_pos, 
+    nearby_objects: String::new(), // Use String::new() instead of Vec::new()
+}).await;
                     }
                 }
             }
@@ -1225,8 +1283,15 @@ JSON FORMAT:
                             board_state = board_state
                         );
                         self.simulate_typing();
-                        let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: true, is_autonomous: true, iq_level: 1.0 }).await;
-                    }
+                        let _ = self.ai_tx.send(AiRequest {
+    agent_name: self.name.clone(),
+    prompt,
+    is_json_format: false,
+    is_autonomous: false,
+    iq_level: self.iq_level,
+    current_pos: self.spatial_pos, 
+    nearby_objects: String::new(), // Use String::new() instead of Vec::new()
+}).await;                    }
                 }
             }
         } else if event.action == "melee_turn" && event.sender == "System" {
@@ -1264,8 +1329,15 @@ JSON FORMAT:
                             battle_state = battle_state
                         );
                         self.simulate_typing();
-                        let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: true, is_autonomous: true, iq_level: 1.0 }).await;
-                    }
+                        let _ = self.ai_tx.send(AiRequest {
+    agent_name: self.name.clone(),
+    prompt,
+    is_json_format: false,
+    is_autonomous: false,
+    iq_level: self.iq_level,
+    current_pos: self.spatial_pos, 
+    nearby_objects: String::new(), // Use String::new() instead of Vec::new()
+}).await;                   }
                 }
             }
         } else if event.action == "awards_xp" && event.sender == "System" {
@@ -1296,8 +1368,15 @@ JSON FORMAT:
                         self.personality, self.name, self.current_mood
                     );
                     self.simulate_typing();
-                    let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: false, is_autonomous: false, iq_level: self.iq_level }).await;
-                }
+                    let _ = self.ai_tx.send(AiRequest {
+    agent_name: self.name.clone(),
+    prompt,
+    is_json_format: false,
+    is_autonomous: false,
+    iq_level: self.iq_level,
+    current_pos: self.spatial_pos, 
+    nearby_objects: String::new(), // Use String::new() instead of Vec::new()
+}).await;                }
             }
         } else if event.action == "punishes" && event.sender == "System" {
             if &event.content == &self.name {
@@ -1314,8 +1393,15 @@ JSON FORMAT:
                         self.personality, self.name, self.current_mood
                     );
                     self.simulate_typing();
-                    let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: false, is_autonomous: false, iq_level: self.iq_level }).await;
-                }
+                    let _ = self.ai_tx.send(AiRequest {
+    agent_name: self.name.clone(),
+    prompt,
+    is_json_format: false,
+    is_autonomous: false,
+    iq_level: self.iq_level,
+    current_pos: self.spatial_pos, 
+    nearby_objects: String::new(), // Use String::new() instead of Vec::new()
+}).await;                }
             }
         }
     }

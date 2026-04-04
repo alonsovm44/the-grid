@@ -21,7 +21,7 @@ pub use agent::{generate_procedural_personality, spawn_agents_for_directory, Pro
 use ai_provider::{run_ai_engine, AiRequest};
 use config::Config;
 use database::Database;
-use app::GridApp;
+use app::{GridApp, DigitizationState};
 
 
 fn main() -> eframe::Result<()> {
@@ -183,6 +183,11 @@ fn main() -> eframe::Result<()> {
                 last_active_agent: None,
                 map_user_pos: egui::pos2(0.0, 0.0),
                 file_positions: HashMap::new(),
+                agent_3d_positions: HashMap::new(), // <--- ADD THIS LINE
+                digitization_state: DigitizationState::Booting(0),
+                digitization_log: Vec::new(),
+                last_log_tick: Instant::now(),
+                camera_angle: 0.0,
             })
         }),
     )

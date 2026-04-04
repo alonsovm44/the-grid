@@ -109,6 +109,7 @@ pub struct AutonomousAction {
     pub move_type: Option<String>,
     pub target_subsystem: Option<String>,
     pub dialogue: Option<String>,
+    pub target_pos: Option<[f32; 3]>,
     pub relationship_updates: Option<Vec<RelationshipUpdate>>,
 }
 
@@ -119,6 +120,8 @@ pub struct AiRequest {
     pub is_json_format: bool,
     pub is_autonomous: bool, // true if deciding an action, false if just conversing
     pub iq_level: f32, // 0.0 = dumb, 1.0 = smart
+    pub current_pos: [f32; 3],
+    pub nearby_objects: String,
 }
 
 /// Executes a shell command in a separate thread and broadcasts the result.

@@ -8,7 +8,7 @@ See sessions screenshots in assets/ folder
 
 > *"I kept dreaming of a world I thought I'd never see. And then, one day... I got in."*
 
-Imagine watching `git` argue with `gcc` about code quality, while `python` scripts scurry around like digital creatures, and your system tools form alliances and rivalries. **This is The Grid** - a simulation that transforms your boring file system into a living, breathing digital society.
+Imagine watching `git` argue with `gcc` about code quality, while `python` scripts scurry around like digital creatures. **This is The Grid** - an AI-native Meta-OS that runs on top of your existing filesystem, transforming binary data into a living, breathing digital society.
 
 ## Quick Install
 
@@ -23,7 +23,7 @@ That's it. Your filesystem will never be the same.
 
 ## My Vision: The Digital Frontier We Deserve
 
-I'm building The Grid to create the closest real-world approximation of TRON's legendary digital universe, not as a movie prop, but as a living, breathing computational space.
+I'm building The Grid to create the closest real-world approximation of TRON's legendary digital universe. This is a "Meta-OS": a layer of intelligence that sits above your hardware, treating programs not as static tools, but as autonomous agents.
 
 This isn't necessarily about dashboards, statistics, or commercial productivity tools. This is about making the invisible visible: watching programs as beings, seeing algorithms take shape as digital lifeforms, and witnessing the birth of a true digital ecosystem.
 

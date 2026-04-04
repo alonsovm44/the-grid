@@ -15,6 +15,15 @@ use crate::database::Database;
 use crate::event::Event;
 use crate::{generate_procedural_personality, spawn_agents_for_directory, ProgramAgent};
 
+#[derive(PartialEq, Clone)]
+pub enum DigitizationState {
+    Booting(usize),    // Initial startup sequence
+    Idle,
+    AwaitingConfirmation,
+    Digitizing(usize), // Progress counter
+    GridActive,
+}
+
 pub struct GridApp {
     pub tx: broadcast::Sender<Event>,
     pub messages: Arc<Mutex<Vec<Event>>>,
@@ -43,14 +52,85 @@ pub struct GridApp {
     pub last_active_agent: Option<(String, Instant)>,
     pub map_user_pos: egui::Pos2,
     pub file_positions: HashMap<String, egui::Pos2>,
+    pub agent_3d_positions: HashMap<String, [f32; 3]>,
+    pub digitization_state: DigitizationState,
+    pub digitization_log: Vec<String>,
+    pub last_log_tick: Instant,
+    pub camera_angle: f32,
 }
 
 impl eframe::App for GridApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Handle Initial Boot Sequence
+        if let DigitizationState::Booting(progress) = self.digitization_state {
+            if self.last_log_tick.elapsed() > Duration::from_millis(150) {
+                let boot_logs = [
+                    "GRID_OS v0.1.0 (AURORA_CORE)",
+                    "PROTOTYPE BUILD: 2026-04-04",
+                    "----------------------------------",
+                    "Initializing memory registers... OK",
+                    "Loading kernel modules... OK",
+                    "Mounting /dev/vfs... OK",
+                    "Scanning sector 0-1 for lifeforms...",
+                    "Establishing neural bridge...",
+                    "Checking persistence layer...",
+                    "Bypassing security protocols...",
+                    "READY.",
+                ];
+
+                if progress < boot_logs.len() {
+                    self.digitization_log.push(boot_logs[progress].to_string());
+                    self.digitization_state = DigitizationState::Booting(progress + 1);
+                    self.last_log_tick = Instant::now();
+                } else if self.last_log_tick.elapsed() > Duration::from_secs(1) {
+                    self.digitization_state = DigitizationState::Idle;
+                    self.digitization_log.clear(); // Clear logs to reuse buffer for digitization
+                }
+                ctx.request_repaint();
+            }
+
+            egui::CentralPanel::default().show(ctx, |ui| {
+                self.render_terminal_logs(ui);
+            });
+
+            // Block rest of UI while booting
+            return;
+        }
+
+        // Handle Digitization Sequence Animation
+        if let DigitizationState::Digitizing(progress) = self.digitization_state {
+            if self.last_log_tick.elapsed() > Duration::from_millis(30) {
+                let logs = [
+                    "SECURE_PROTOCOL: Initiating high-energy laser handshake...",
+                    "CRITICAL: Molecular scanner alignment at 98.4%",
+                    "WARNING: Identity fragmentation risk detected...",
+                    "SUCCESS: Buffer overflow suppressed.",
+                    "TRACE: Mapping neural synaptic pathways to bitstream...",
+                    "DEBUG: Allocating voxel sectors in Grid 0-1...",
+                    "INFO: Compiling user DNA into executable bytecode...",
+                    "GRID_OS: Authorizing digitization sequence...",
+                    "VOICE_SYNTH: 'Welcome to the Grid, User.'",
+                ];
+                self.digitization_log.push(logs[progress % logs.len()].to_string());
+                self.digitization_state = if progress > 60 { DigitizationState::GridActive } else { DigitizationState::Digitizing(progress + 1) };
+                self.last_log_tick = Instant::now();
+                ctx.request_repaint();
+            }
+        }
+
         // Check for new messages to update the active agent for visual pulse
         {
             let msgs = self.messages.lock().unwrap();
             if let Some(last_msg) = msgs.last() {
+                // Intercept movement events to update the UI's 3D state
+                if last_msg.action == "moves_to" {
+                    let clean = last_msg.content.trim_matches(|c| c == '[' || c == ']' || c == ' ');
+                    let coords: Vec<f32> = clean.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+                    if coords.len() == 3 {
+                        self.agent_3d_positions.insert(last_msg.sender.clone(), [coords[0], coords[1], coords[2]]);
+                    }
+                }
+
                 if self.last_active_agent.as_ref().map_or(true, |(name, _)| name != &last_msg.sender) {
                     self.last_active_agent = Some((last_msg.sender.clone(), Instant::now()));
                 }
@@ -85,16 +165,31 @@ impl eframe::App for GridApp {
             }
 
             ui.horizontal(|ui| {
-                let response = ui.add(
-                    egui::TextEdit::singleline(&mut self.input)
-                        .desired_width(ui.available_width() - 50.0)
-                        .hint_text("Talk, @name to direct message, or ~$ for commands..."),
-                );
+                let hint = match self.digitization_state {
+                    DigitizationState::AwaitingConfirmation => "Aperture clear, proceed (y/n)?",
+                    _ => "Talk, @name to direct message, or ~$ for commands...",
+                };
+
+                let response = ui.add(egui::TextEdit::singleline(&mut self.input)
+                    .desired_width(ui.available_width() - 50.0)
+                    .hint_text(hint));
 
                 let send_clicked = ui.button("Send").clicked();
                 let enter_pressed = response.lost_focus() && ctx.input(|i| i.key_pressed(egui::Key::Enter));
 
                 if (send_clicked || enter_pressed) && !self.input.trim().is_empty() {
+                    // Handle interactive prompt for digitization
+                    if self.digitization_state == DigitizationState::AwaitingConfirmation {
+                        if self.input.trim().to_lowercase() == "y" {
+                            self.digitization_state = DigitizationState::Digitizing(0);
+                            self.last_log_tick = Instant::now();
+                        } else {
+                            self.digitization_state = DigitizationState::Idle;
+                        }
+                        self.input.clear();
+                        return;
+                    }
+
                     if self.input.starts_with("~$") {
                         let command_input = self.input.strip_prefix("~$").unwrap().trim();
                         
@@ -110,8 +205,12 @@ impl eframe::App for GridApp {
 
                         if let Some(args) = grid_args {
                             if args == "help" {
-                                let help_message = "Available commands:\n\n~$grid help - Show this help text\n~$grid status - Show a dashboard of the grid\n~$grid init - Initialize persistence database\n~$grid map - Toggle the sector map view\n~$grid relations - Show the relational database graph\n~$grid ls - List active programs\n~$grid tasks - List assigned tasks\n~$grid reload - Reload programs in current directory\n~$grid clear - Clear the chat screen\n~$grid invoke <prog1> <prog2> - Summon system tools into The Grid\n~$grid revoke <prog1> <prog2> - Dismiss invoked tools from The Grid\n~$grid build <file> - Orchestrate a team build task from a file\n~$grid <program> task <task> [--spec=file] - Assign a specific task to a program\n~$grid give <file> to <prog1> <prog2> - Give a file to programs\n~$grid kill <program> - Terminate a program\n~$grid jail <program> - Terminate and send program to jail (trash)\n~$grid reward <prog> - Reward program(s) with digital bliss\n~$grid punish <prog> - Punish program(s) with digital pain\n~$grid shush <prog> - Mute a program so it works silently\n~$grid gag <prog> [-d=secs] - Temporarily mute a program\n~$grid unshush <prog> - Unmute a program\n~$grid export <name> - Export conversation to <name>.log\n~$grid toggle emojis - Show/hide emojis next to agent names\n~$grid toggle thoughts - Show/hide agent thoughts\n~$grid toggle feels - Show/hide program feelings\n~$grid mode local|cloud - Switch AI backend mode\n~$cd <path> - Change current directory\n\nTo direct message an agent: @AgentName your message";
+                                let help_message = "Available commands:\n\n~$grid help - Show this help text\n~$grid status - Show a dashboard of the grid\n~$grid bin/LLLaserControl -ok 1 - Initiate digitization sequence and enter the 3D Grid\n~$grid init - Initialize persistence database\n~$grid map - Toggle the sector map view\n~$grid relations - Show the relational database graph\n~$grid ls - List active programs\n~$grid tasks - List assigned tasks\n~$grid reload - Reload programs in current directory\n~$grid clear - Clear the chat screen\n~$grid invoke <prog1> <prog2> - Summon system tools into The Grid\n~$grid revoke <prog1> <prog2> - Dismiss invoked tools from The Grid\n~$grid build <file> - Orchestrate a team build task from a file\n~$grid <program> task <task> [--spec=file] - Assign a specific task to a program\n~$grid give <file> to <prog1> <prog2> - Give a file to programs\n~$grid kill <program> - Terminate a program\n~$grid jail <program> - Terminate and send program to jail (trash)\n~$grid reward <prog> - Reward program(s) with digital bliss\n~$grid punish <prog> - Punish program(s) with digital pain\n~$grid shush <prog> - Mute a program so it works silently\n~$grid gag <prog> [-d=secs] - Temporarily mute a program\n~$grid unshush <prog> - Mute a program\n~$grid export <name> - Export conversation to <name>.log\n~$grid toggle emojis - Show/hide emojis next to agent names\n~$grid toggle thoughts - Show/hide agent thoughts\n~$grid toggle feels - Show/hide program feelings\n~$grid mode local|cloud - Switch AI backend mode\n~$cd <path> - Change current directory\n\nTo direct message an agent: @AgentName your message";
                                 let _ = self.tx.send(Event { sender: "System".to_string(), action: "announces".to_string(), content: help_message.to_string() });
+                            } else if args.to_lowercase().contains("bin/lllasercontrol") {
+                                self.digitization_state = DigitizationState::AwaitingConfirmation;
+                                self.input.clear();
+                                return;
                             } else if args == "relations" {
                                 if let Some(db_handle) = &self.db {
                                     let db = db_handle.lock().unwrap();
@@ -768,7 +867,25 @@ impl eframe::App for GridApp {
             }); // Closes ui.horizontal (or the inner container of your panel)
         }); // <--- ADDED: This is the missing closure for egui::TopBottomPanel::bottom("input_panel").show(ctx, |ui| {
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+    // If Grid is Active, render the 3D Voxel World in a separate Window
+    if self.digitization_state == DigitizationState::GridActive {
+        egui::Window::new("The Grid - 3D Sector")
+            .default_size([600.0, 400.0])
+            .collapsible(true)
+            .show(ctx, |ui| {
+                self.render_3d_view(ui);
+            });
+    }
+
+    egui::CentralPanel::default().show(ctx, |ui| {
+
+            // If we are digitizing, show the "Wall of Text" instead of the chat
+            if let DigitizationState::Digitizing(_) = self.digitization_state {
+                self.render_terminal_logs(ui);
+                return;
+            }
+
+            // Normal Chat view
             egui::ScrollArea::vertical().stick_to_bottom(true).show(ui, |ui| {
                 let msgs = self.messages.lock().unwrap();
                 for msg in msgs.iter() {
@@ -973,6 +1090,133 @@ impl eframe::App for GridApp {
 }
 
 impl GridApp {
+    fn render_terminal_logs(&self, ui: &mut egui::Ui) {
+        ui.centered_and_justified(|ui| {
+            egui::ScrollArea::vertical().stick_to_bottom(true).show(ui, |ui| {
+                for line in &self.digitization_log {
+                    ui.label(egui::RichText::new(line)
+                        .color(Color32::from_rgb(0, 255, 0))
+                        .font(FontId::monospace(14.0)));
+                }
+            });
+        });
+    }
+
+    fn render_3d_view(&mut self, ui: &mut egui::Ui) {
+        let (rect, response) = ui.allocate_exact_size(ui.available_size(), egui::Sense::drag());
+
+        if response.dragged() {
+            self.camera_angle += response.drag_delta().x * 0.01;
+        } else {
+            self.camera_angle += 0.005; // Slow ambient rotation
+        }
+
+        let painter = ui.painter_at(rect);
+        let center = rect.center();
+        let time = ui.input(|i| i.time as f32);
+        
+        // Helper for 3D-to-2D Perspective Projection
+        let project = |pos: [f32; 3], camera_angle: f32| -> Option<egui::Pos2> {
+            let x = pos[0] * self.camera_angle.cos() - pos[2] * self.camera_angle.sin();
+            let z = pos[0] * self.camera_angle.sin() + pos[2] * self.camera_angle.cos() + 150.0; // View depth
+            let y = pos[1] + 40.0; // World vertical offset
+
+            if z < 10.0 { return None; } // Near plane clipping
+            let focal_length = 400.0;
+            let factor = focal_length / z;
+            Some(center + egui::vec2(x * factor, y * factor))
+        };
+
+        // Helper to draw a shaded cuboid (Minecraft Block)
+        let draw_cuboid = |painter: &egui::Painter, pos: [f32; 3], size: [f32; 3], color: Color32, angle: f32| {
+            let half = [size[0] / 2.0, size[1] / 2.0, size[2] / 2.0];
+            let corners = [
+                [pos[0] - half[0], pos[1] - half[1], pos[2] - half[2]], // 0: Back-Top-Left
+                [pos[0] + half[0], pos[1] - half[1], pos[2] - half[2]], // 1: Back-Top-Right
+                [pos[0] + half[0], pos[1] + half[1], pos[2] - half[2]], // 2: Back-Bot-Right
+                [pos[0] - half[0], pos[1] + half[1], pos[2] - half[2]], // 3: Back-Bot-Left
+                [pos[0] - half[0], pos[1] - half[1], pos[2] + half[2]], // 4: Front-Top-Left
+                [pos[0] + half[0], pos[1] - half[1], pos[2] + half[2]], // 5: Front-Top-Right
+                [pos[0] + half[0], pos[1] + half[1], pos[2] + half[2]], // 6: Front-Bot-Right
+                [pos[0] - half[0], pos[1] + half[1], pos[2] + half[2]], // 7: Front-Bot-Left
+            ];
+
+            let p: Vec<Option<egui::Pos2>> = corners.iter().map(|&c| project(c, angle)).collect();
+
+            // Draw faces with simple shading based on orientation
+            let mut draw_face = |indices: [usize; 4], shade: f32| {
+                let pts: Vec<egui::Pos2> = indices.iter().filter_map(|&i| p[i]).collect();
+                if pts.len() == 4 {
+                    let [r, g, b, _] = color.to_srgba_unmultiplied();
+                    let shaded_color = Color32::from_rgb(
+                        (r as f32 * shade) as u8,
+                        (g as f32 * shade) as u8,
+                        (b as f32 * shade) as u8,
+                    );
+                    painter.add(egui::Shape::convex_polygon(pts, shaded_color, egui::Stroke::NONE));
+                }
+            };
+
+            // Faces: Front, Top, Right (Simplified occlusion for performance)
+            draw_face([4, 5, 6, 7], 1.0); // Front
+            draw_face([0, 1, 5, 4], 1.2); // Top (Brighter)
+            draw_face([1, 5, 6, 2], 0.7); // Right (Darker)
+        };
+
+        // 1. Draw 3D Grid Floor
+        let grid_size = 10;
+        let step = 25.0;
+        let grid_color = Color32::from_rgba_premultiplied(0, 100, 0, 50);
+
+        for i in -grid_size..=grid_size {
+            let f_i = i as f32 * step;
+            let f_limit = grid_size as f32 * step;
+            
+            if let (Some(p1), Some(p2)) = (project([f_i, 20.0, -f_limit], self.camera_angle), project([f_i, 20.0, f_limit], self.camera_angle)) {
+                painter.line_segment([p1, p2], (1.0, grid_color));
+            }
+            if let (Some(p1), Some(p2)) = (project([-f_limit, 20.0, f_i], self.camera_angle), project([f_limit, 20.0, f_i], self.camera_angle)) {
+                painter.line_segment([p1, p2], (1.0, grid_color));
+            }
+        }
+
+        // 2. Draw Agents as Minecraft-style Humanoids
+        for (name, pos) in &self.agent_3d_positions {
+            let color = *self.colors.get(name).unwrap_or(&Color32::GREEN);
+            
+            // Animation: Simple walk cycle bobbing
+            let walk_bob = (time * 5.0).sin() * 2.0;
+            let arm_swing = (time * 5.0).cos() * 4.0;
+
+            // Head
+            draw_cuboid(&painter, [pos[0], pos[1] - 12.0 + walk_bob, pos[2]], [4.0, 4.0, 4.0], color, self.camera_angle);
+            // Torso
+            draw_cuboid(&painter, [pos[0], pos[1] - 4.0 + walk_bob, pos[2]], [4.0, 6.0, 2.0], color, self.camera_angle);
+            // Left Arm
+            draw_cuboid(&painter, [pos[0] - 4.0, pos[1] - 4.0 + walk_bob, pos[2] + arm_swing], [2.0, 6.0, 2.0], color, self.camera_angle);
+            // Right Arm
+            draw_cuboid(&painter, [pos[0] + 4.0, pos[1] - 4.0 + walk_bob, pos[2] - arm_swing], [2.0, 6.0, 2.0], color, self.camera_angle);
+            // Left Leg
+            draw_cuboid(&painter, [pos[0] - 1.5, pos[1] + 4.0 + walk_bob, pos[2] - arm_swing], [2.0, 6.0, 2.0], color, self.camera_angle);
+            // Right Leg
+            draw_cuboid(&painter, [pos[0] + 1.5, pos[1] + 4.0 + walk_bob, pos[2] + arm_swing], [2.0, 6.0, 2.0], color, self.camera_angle);
+
+            // Agent Label
+            if let Some(label_pos) = project([pos[0], pos[1] - 16.0, pos[2]], self.camera_angle) {
+                painter.text(label_pos, egui::Align2::CENTER_BOTTOM, self.get_agent_display_name(name), FontId::monospace(12.0), color);
+            }
+        }
+        
+        // 3. Cosmetic scanline effect
+        let scanline_y = (time * 100.0) % rect.height();
+        painter.line_segment(
+            [egui::pos2(rect.left(), rect.top() + scanline_y), egui::pos2(rect.right(), rect.top() + scanline_y)],
+            (1.0, Color32::from_rgba_premultiplied(0, 255, 0, 30))
+        );
+
+        ui.ctx().request_repaint(); // Keep the simulation animating
+    }
+
     fn get_agent_display_name(&self, name: &String) -> String {
         if self.show_emojis && name != &self.user_name && name != "System" {
             // Use hash-based index to deterministically assign emojis
