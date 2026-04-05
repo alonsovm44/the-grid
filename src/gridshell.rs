@@ -416,13 +416,47 @@ impl GridShell {
 
     fn execute_help(&mut self) -> Result<String, String> {
         let help_text = r#"
-GridShell Commands:
+=== THE GRID SYSTEM COMMANDS ===
+  grid init            - Initialize the persistent database
+  grid ls              - List all active programs in the current sector
+  grid status          - Show detailed system status, resources, and tasks
+  grid tasks           - List currently active agent tasks
+  grid map             - Toggle the 3D Sector Map visualization
+  grid relations       - Show the affinity/relationship graph between agents
+  grid reload          - Refresh and respawn agents in current directory
+  grid build [target]  - Orchestrate a full project build using available tools
+  
+  grid invoke [tools]  - Manually spawn system tools (e.g., git, cargo, vim)
+  grid revoke [tools]  - Remove manually invoked tools
+  grid kill [name]     - Forcefully terminate (derez) a program
+  grid jail [name]     - Move an executable to the .jail directory
+  
+  grid [name] task "[t]" - Assign a direct task to a specific program
+  grid give [f] to [n]  - Hand a file to one or more programs
+  
+  grid reward [names]  - Award digital bliss and XP to programs
+  grid punish [names]  - Inflict cycle starvation and structural degradation
+  grid shush [names]   - Mute a program's vocal subroutines
+  grid unshush [names] - Restore a program's vocal subroutines
+  grid gag [names]     - Temporarily mute programs (use -d=seconds)
+  
+  grid mode [local|cloud] - Switch between local (Ollama) and cloud providers
+  grid export [name]   - Save the current conversation log to a file
+  grid clear           - Wipe the terminal history
+  grid toggle [emojis|thoughts|feels] - Toggle UI metadata overlays
+  
+  grid start-adversarial-network [p1] -vs [p2] [arena] - Initiation combat
+    Arenas: arena=light-cycles, arena=melee
+
+================================
+
+SEMANTIC SHELL COMMANDS:
 
 Agent Calls:
   think "args"           - Spawn analysis agent
   implement "args"        - Spawn implementation agent  
   analyze "args"          - Spawn analysis agent
-  create_agent "name"      - Create custom agent
+  create_agent "name"    - Create custom agent
 
 Pipelines:
   think "analyze code" | implement "fix issues" | test "validate"
@@ -437,7 +471,7 @@ File Operations:
   list --tags "tag1,tag2" --sort "name|access"
 
 System:
-  status                 - Show system status
+  status                 - Show semantic shell status
   help                   - Show this help
         "#;
         

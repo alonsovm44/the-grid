@@ -11,6 +11,7 @@ mod event;
 mod app;
 mod agent;
 mod agent_blueprint;
+mod ag_parser;
 mod ai_provider;
 mod config;
 mod database;

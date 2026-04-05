@@ -218,40 +218,8 @@ impl eframe::App for GridApp {
                                 });
                             },
                             Err(_) => {
-                                if let Some(args) = grid_args {
-                                    if let Some(db_handle) = &self.db {
-                                        let db = db_handle.lock().unwrap();
-                                        let mut output = String::from("Relational Database Graph:\n");
-                                        let mut found_any = false;
-                                        for name in &self.agent_names {
-                                            if let Ok(rels) = db.get_relationships(name) {
-                                                if !rels.is_empty() {
-                                                    found_any = true;
-                                                    output.push_str(&format!("{}: ", name));
-                                                    let rel_strs: Vec<String> = rels.iter()
-                                                        .map(|(target, affinity)| format!("{} ({})", target, affinity))
-                                                        .collect();
-                                                    output.push_str(&rel_strs.join(", "));
-                                                    output.push('\n');
-                                                }
-                                            }
-                                        }
-                                        if !found_any {
-                                            output.push_str("No relationships have been formed yet.");
-                                        }
-                                        let _ = self.tx.send(Event {
-                                            sender: "System".to_string(),
-                                            action: "announces".to_string(),
-                                            content: output.trim_end().to_string(),
-                                        });
-                                    } else {
-                                        let _ = self.tx.send(Event {
-                                            sender: "System".to_string(),
-                                            action: "error".to_string(),
-                                            content: "Database not initialized. Run ~$ grid init first.".to_string(),
-                                        });
-                                    }
-                                }
+                                // Fall through to specialized grid system commands if GridShell 
+                                // doesn't recognize the input as a semantic agent call.
                             }
                         };
 
@@ -289,6 +257,15 @@ impl eframe::App for GridApp {
                                         content: "Database not initialized. Run ~$ grid init first.".to_string(),
                                     });
                                 }
+                        } else if args == "help" {
+                            match self.gridshell.execute("help") {
+                                Ok(help_text) => {
+                                    let _ = self.tx.send(Event { sender: "System".to_string(), action: "announces".to_string(), content: help_text });
+                                },
+                                Err(e) => {
+                                    let _ = self.tx.send(Event { sender: "System".to_string(), action: "error".to_string(), content: e });
+                                }
+                            }
                             } else if args == "init" {
                             if self.db.is_some() {
                                 let _ = self.tx.send(Event { sender: "System".to_string(), action: "announces".to_string(), content: "Database already initialized.".to_string() });

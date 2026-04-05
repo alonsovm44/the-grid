@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+
+use crate::ag_parser;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentBlueprint {
@@ -33,12 +34,13 @@ pub struct AgentEvolution {
 impl AgentBlueprint {
     pub fn from_file(path: &std::path::Path) -> Result<Self, Box<dyn std::error::Error>> {
         let content = std::fs::read_to_string(path)?;
-        let blueprint: AgentBlueprint = toml::from_str(&content)?;
+        let blueprint = ag_parser::parse_ag_file(&content)
+            .map_err(|e| format!("{}: {}", path.display(), e))?;
         Ok(blueprint)
     }
 
     pub fn save_to_file(&self, path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
-        let content = toml::to_string_pretty(self)?;
+        let content = ag_parser::serialize_ag(self);
         std::fs::write(path, content)?;
         Ok(())
     }
