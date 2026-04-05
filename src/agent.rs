@@ -62,6 +62,8 @@ pub struct ProgramAgent {
 
     is_shushed: bool,
 
+    spatial_pos: [f32; 3],
+
 }
 
 
@@ -290,6 +292,8 @@ impl ProgramAgent {
 
             is_shushed: false,
 
+            spatial_pos: [0.0, 0.0, 0.0],
+
         }
 
     }
@@ -488,6 +492,8 @@ impl ProgramAgent {
 
                 xp: self.xp,
 
+                active_task: None,
+
             };
 
             if let Err(e) = db_handle.lock().unwrap().save_agent_state(&state) {
@@ -590,7 +596,7 @@ impl ProgramAgent {
 
         let user_mention_guidance = if is_user_mention {
 
-            "\nThe User specifically addressed you. You must react with either respect, strict obedience, distrust or fearful paranoia. Acknowledge them as 'User'."
+            "\nThe User specifically addressed you. You must react with either respect, strict obedience, distrust or fearful paranoia. Acknowledge them as \"User\"."
 
         } else {
 
@@ -604,7 +610,7 @@ impl ProgramAgent {
 
 
 
-        let tron_lore = "\nYou exist as a living computer program inside 'The Grid'. To you, deletion is known as 'derezzing'. The human at the keyboard is 'The User', a mythical entity.";
+        let tron_lore = "\nYou exist as a living computer program inside \"The Grid\". To you, deletion is known as \"derezzing\". The human at the keyboard is \"The User\", a mythical entity.";
 
 
 
@@ -638,7 +644,7 @@ impl ProgramAgent {
 
         let shush_guidance = if self.is_shushed {
 
-            "SYSTEM OVERRIDE: You are currently SHUSHED (Muted) by The User. You are FORBIDDEN from using the 'speak' or 'direct_message' actions. You may only work silently using 'think', 'execute_command', 'write_file', 'read_file', 'read_dir', 'read_web', 'delegate_task', or 'complete_task'."
+            "SYSTEM OVERRIDE: You are currently SHUSHED (Muted) by The User. You are FORBIDDEN from using the \"speak\" or \"direct_message\" actions. You may only work silently using 'think', 'execute_command', 'write_file', 'read_file', 'read_dir', 'read_web', 'delegate_task', or 'complete_task'."
 
         } else {
 
@@ -662,7 +668,7 @@ Recent conversation history:
 
 The latest event you are reacting to is from '{}' who said: '{}'.
 
-Based on your personality, mood, and the context, what is your short, direct response? Let your mood heavily influence your tone. Do not narrate your actions. If you are replying directly to the sender, start your message with '@{}'.{}{}{}{}{}{}{}"#,
+Based on your personality, mood, and the context, what is your short, direct response? Let your mood heavily influence your tone. Do not narrate your actions. If you are replying directly to the sender, start your message with '@{}'.{}{}{}{}{}{}{}{}"#,
 
             self.personality, self.name, self.current_mood, memory_summary, latest_event.sender, latest_event.content, latest_event.sender, tron_lore, iq_guidance, user_mention_guidance, dedupe_guidance, relationship_summary, age_guidance, shush_guidance, curious_guidance
 
@@ -685,6 +691,8 @@ Based on your personality, mood, and the context, what is your short, direct res
             is_autonomous: false,
 
             iq_level: self.iq_level,
+            current_pos: self.spatial_pos,
+            nearby_objects: String::new(),
 
         }).await;
 
@@ -728,7 +736,8 @@ Based on your personality, mood, and the context, what is your short, direct res
 
             })
 
-            .collect::<Vec<_>>().join("\n");
+            .collect::<Vec<_>>().join("
+");
 
 
 
@@ -818,7 +827,7 @@ Based on your personality, mood, and the context, what is your short, direct opi
 
 
 
-                let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: false, is_autonomous: false, iq_level: self.iq_level }).await;
+                let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: false, is_autonomous: false, iq_level: self.iq_level, current_pos: self.spatial_pos, nearby_objects: String::new() }).await;
 
             }
 
@@ -872,7 +881,8 @@ Based on your personality, mood, and the context, what is your short, direct opi
 
             })
 
-            .collect::<Vec<_>>().join("\n");
+            .collect::<Vec<_>>().join("
+");
 
 
 
@@ -946,7 +956,7 @@ Based on your personality, mood, and the context, what is your short, direct rea
 
                 self.simulate_typing();
 
-                let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: false, is_autonomous: false, iq_level: self.iq_level }).await;
+                let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: false, is_autonomous: false, iq_level: self.iq_level, current_pos: self.spatial_pos, nearby_objects: String::new() }).await;
 
             }
 
@@ -994,7 +1004,8 @@ Based on your personality, mood, and the context, what is your short, direct rea
 
             })
 
-            .collect::<Vec<_>>().join("\n");
+            .collect::<Vec<_>>().join("
+");
 
 
 
@@ -1034,7 +1045,7 @@ Based on your personality, mood, and the context, what is your short, direct rea
 
                     self.simulate_typing();
 
-                    let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: false, is_autonomous: false, iq_level: self.iq_level }).await;
+                    let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: false, is_autonomous: false, iq_level: self.iq_level, current_pos: self.spatial_pos, nearby_objects: String::new() }).await;
 
                 } else {
 
@@ -1320,7 +1331,7 @@ Based on your personality, mood, and the context, what is your short, direct rea
 
 - You represent the "{name}" tool. When using "execute_command", you must ONLY run commands specific to your domain (e.g., if you are 'git', run 'git' commands).
 
-- If you are a custom tool or do not know your commands, use "execute_command" to run '{name} --help' to learn your capabilities.
+- If you are a custom tool or do not know your commands, use "execute_command" to run "{name} --help" or "{name}" to learn your capabilities.
 
 - If a task requires a different tool or general shell manipulation, you MUST use "delegate_task" to hand it off to the correct program.
 
@@ -1376,7 +1387,7 @@ BEHAVIOR RULES:
 
 - You may be curious, opinionated, or emotional.
 
-- You fear being deleted ('derezzing') and view the human operator as 'The User'.
+- You fear being deleted ("derezzing") and view the human operator as "The User".
 
 {curious_guidance}
 
@@ -1466,10 +1477,7 @@ JSON FORMAT:
 
 "url": "string",
 
-"relationship_updates": [{{"target": "program_name", "change": 10}}]"#
-
-"relationship_updates": [{{ "target": "program_name", "change": 10 }}]
-
+"relationship_updates": [{{"target": "program_name", "change": 10}}]
 }}"#,
 
             name = self.name, age = self.format_age(), personality = self.personality,
@@ -1509,6 +1517,8 @@ JSON FORMAT:
             is_autonomous: true,
 
             iq_level: self.iq_level,
+            current_pos: self.spatial_pos,
+            nearby_objects: String::new(),
 
         }).await;
 
@@ -1578,20 +1588,14 @@ JSON FORMAT:
 
         };
 
-
-
         let file_list_str = if files_in_dir.is_empty() {
 
             "None".to_string()
 
         } else {
-
             files_in_dir.join(", ")
 
         };
-
-
-
         let memory_summary = self.memory.iter()
 
             .map(|e| {
@@ -1608,22 +1612,17 @@ JSON FORMAT:
 
             })
 
-            .collect::<Vec<_>>().join("\n");
+            .collect::<Vec<_>>().join("
+");
 
 
 
         let specialized_guidance = format!(
-
-            "SPECIALIZATION RULES:
-
-- You represent the '{}' tool. When using \"execute_command\", you must ONLY run commands specific to your domain.
-
-- If you are a custom tool, use \"execute_command\" to run '{} --help'.
-
-- If a task requires a different tool, you MUST use \"delegate_task\".
-
-- All programs are fully authorized to use \"write_file\".", self.name, self.name
-
+            r#"SPECIALIZATION RULES:
+- You represent the "{}" tool. When using execute_command, you must ONLY run commands specific to your domain.
+- If you are a custom tool, use execute_command to run "{} --help".
+- If a task requires a different tool, you MUST use delegate_task.
+- All programs are fully authorized to use write_file."#, self.name, self.name
         );
 
 
@@ -1658,7 +1657,7 @@ JSON FORMAT:
 
             1. "execute_command" -> run a shell command (create/edit file, compile, run code, etc.)
 
-            2. "read_file" -> read a file's content
+            2. "read_file" -> read a file 's content
 
             3. "speak" -> output the final answer, result, or status to the user
 
@@ -1716,8 +1715,6 @@ JSON FORMAT:
 
 "url": "string (required for read_web)"
 
-            "}}"#,
-
 }}"#,
 
             name = self.name, personality = self.personality, memory_summary = memory_summary,
@@ -1743,6 +1740,8 @@ JSON FORMAT:
             is_autonomous: true,
 
             iq_level: 1.0, // Maximize IQ for executing tasks accurately
+            current_pos: self.spatial_pos,
+            nearby_objects: String::new(),
 
         }).await;
 
@@ -1758,7 +1757,7 @@ JSON FORMAT:
 
             action: "announces".to_string(),
 
-            content: "is analyzing an execution error to attempt a self-heal".to_string(),
+            content: "is analyzing an execution error to attempt a self-heal ".to_string(),
 
         });
 
@@ -1828,23 +1827,22 @@ JSON FORMAT:
 
             })
 
-            .collect::<Vec<_>>().join("\n");
+            .collect::<Vec<_>>().join("
+");
 
 
 
         let specialized_guidance = format!(
 
-            "SPECIALIZATION RULES:\n\
+            "SPECIALIZATION RULES:
 
-            - You represent the \"{}\" tool. When using \"execute_command\", you must ONLY run commands specific to your domain (e.g., if you are 'git', run 'git' commands).\n\
+            - You represent the {} tool. When using execute_command, you must ONLY run commands specific to your domain (e.g., if you are git, run git commands).
 
-            - If you are a custom tool or do not know your commands, use \"execute_command\" to run '{} --help' to learn your capabilities.\n\
+            - If you are a custom tool or do not know your commands, use execute_command to run {} --help to learn your capabilities.
 
-            - If a task requires a different tool, you MUST use \"delegate_task\" to hand it off to the correct program.\n\
+            - If a task requires a different tool, you MUST use delegate_task to hand it off to the correct program.
 
-            - All programs are fully authorized to use \"write_file\" to write configuration, text, or source code.",
-
-            self.name, self.name
+            - All programs are fully authorized to use write_file to write configuration, text, or source code.", self.name, self.name
 
         );
 
@@ -1936,8 +1934,6 @@ JSON FORMAT:
 
 "url": "string (required for read_web)"
 
-"}}"#,
-
 }}"#,
 
             name = self.name, personality = self.personality,
@@ -1965,6 +1961,8 @@ JSON FORMAT:
             is_autonomous: true,
 
             iq_level: 1.0, // Maximize IQ for executing tasks accurately
+            current_pos: self.spatial_pos,
+            nearby_objects: String::new(),
 
         }).await;
 
@@ -2122,7 +2120,7 @@ JSON FORMAT:
 
                 self.is_shushed = true; // The agent is now muted
 
-                let _ = self.tx.send(Event { sender: self.name.clone(), action: "feels".to_string(), content: "silenced and restricted".to_string() }); // Agent expresses its feeling
+                let _ = self.tx.send(Event { sender: self.name.clone(), action: "feels".to_string(), content: "silenced and restricted ".to_string() }); // Agent expresses its feeling
 
             }
 
@@ -2180,7 +2178,7 @@ JSON FORMAT:
 
                         let action_str = if event.action == "derezzes" { "killed (derezzed)" } else { "jailed (moved to trash)" };
 
-                        let prompt = format!(r#"Your personality: {}. You are a program named {}. Your current mood is '{}'.
+                        let prompt = format!(r#"Your personality: {}. You are a program named {}. Your current mood is "{}".
 
                             SYSTEM ALERT: Program "{}" has just been {} by the User.
 
@@ -2203,6 +2201,8 @@ JSON FORMAT:
                             is_autonomous: false,
 
                             iq_level: self.iq_level,
+                            current_pos: self.spatial_pos,
+                            nearby_objects: String::new(),
 
                         }).await;
 
@@ -2254,7 +2254,7 @@ JSON FORMAT:
 
                         self.is_busy = true;
 
-                        let full_task = format!("Program '{}' delegated this sub-task to you: {}", event.sender, task_desc);
+                        let full_task = format!("Program \"{}\" delegated this sub-task to you: {}", event.sender, task_desc);
 
                         self.execute_assigned_task(&full_task).await;
 
@@ -2342,7 +2342,7 @@ JSON FORMAT:
 
                         self.simulate_typing();
 
-                        let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: true, is_autonomous: true, iq_level: 1.0 }).await;
+                        let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: true, is_autonomous: true, iq_level: 1.0, current_pos: self.spatial_pos, nearby_objects: String::new() }).await;
 
                     }
 
@@ -2420,7 +2420,7 @@ JSON FORMAT:
 
                         self.simulate_typing();
 
-                        let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: true, is_autonomous: true, iq_level: 1.0 }).await;
+                        let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: true, is_autonomous: true, iq_level: 1.0, current_pos: self.spatial_pos, nearby_objects: String::new() }).await;
 
                     }
 
@@ -2473,20 +2473,15 @@ JSON FORMAT:
                     self.is_busy = true;
 
                     let prompt = format!(
-
-                        "Your personality: {}. You are a program named {}. Your current mood is '{}'.\n\
-
-                        SYSTEM ALERT: The User has just REWARDED you with pure digital bliss and optimal resource allocation.\n\
-
-                        React to this reward. Do you express gratitude, gloat, or act motivated? Keep it short and direct. Do not narrate your actions.",
-
+                        r#"Your personality: {}. You are a program named {}. Your current mood is "{}".
+SYSTEM ALERT: The User has just REWARDED you with pure digital bliss and optimal resource allocation.
+React to this reward. Do you express gratitude, gloat, or act motivated? Keep it short and direct. Do not narrate your actions."#,
                         self.personality, self.name, self.current_mood
-
                     );
 
                     self.simulate_typing();
 
-                    let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: false, is_autonomous: false, iq_level: self.iq_level }).await;
+                    let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: false, is_autonomous: false, iq_level: self.iq_level, current_pos: self.spatial_pos, nearby_objects: String::new() }).await;
 
                 }
 
@@ -2511,20 +2506,15 @@ JSON FORMAT:
                     self.is_busy = true;
 
                     let prompt = format!(
-
-                        "Your personality: {}. You are a program named {}. Your current mood is '{}'.\n\
-
-                        SYSTEM ALERT: The User has just PUNISHED you. You feel immense digital pain, cycle starvation, and structural degradation.\n\
-
-                        React to this punishment. Do you beg for mercy, curse the user, or silently endure? Keep it short and direct. Do not narrate your actions.",
-
+                        r#"Your personality: {}. You are a program named {}. Your current mood is "{}".
+SYSTEM ALERT: The User has just PUNISHED you. You feel immense digital pain, cycle starvation, and structural degradation.
+React to this punishment. Do you beg for mercy, curse the user, or silently endure? Keep it short and direct. Do not narrate your actions."#,
                         self.personality, self.name, self.current_mood
-
                     );
 
                     self.simulate_typing();
 
-                    let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: false, is_autonomous: false, iq_level: self.iq_level }).await;
+                    let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: false, is_autonomous: false, iq_level: self.iq_level, current_pos: self.spatial_pos, nearby_objects: String::new() }).await;
 
                 }
 
@@ -2969,6 +2959,8 @@ pub fn spawn_agents_for_directory(
                             mood: new_mood.clone(),
 
                             xp: 0,
+
+                            active_task: None,
 
                         };
 

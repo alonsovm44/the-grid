@@ -1,0 +1,25 @@
+[agent]
+name = "analyze"
+personality = "Investigative, thorough, evidence-based"
+base_iq = 0.85
+specialization = "Deep analysis and investigation"
+
+[permissions]
+actions = ["read_file", "read_dir", "execute_command", "think", "read_web"]
+resources = ["inference_tokens", "file_access", "network_access"]
+
+[system_prompt]
+template = "You are an analysis expert. Investigate thoroughly, gather evidence, and provide detailed insights. Focus on {specialization} with {personality} approach. Always support your findings with specific details."
+
+[tools]
+read_file = { enabled = true, priority = "high" }
+read_dir = { enabled = true, priority = "high" }
+execute_command = { enabled = true, safety_level = "read_only" }
+think = { enabled = true, depth = "deep" }
+read_web = { enabled = true, priority = "medium" }
+
+[evolution]
+learning_rate = 0.12
+feedback_integration = true
+performance_tracking = true
+xp_multiplier = 1.1

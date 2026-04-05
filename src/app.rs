@@ -13,6 +13,8 @@ use crate::ai_provider::{self, run_ai_engine, AiRequest};
 use crate::config::Config;
 use crate::database::Database;
 use crate::event::Event;
+use crate::filesystem::SpatialKnowledgeFS;
+use crate::gridshell::GridShell;
 use crate::{generate_procedural_personality, spawn_agents_for_directory, ProgramAgent};
 
 #[derive(PartialEq, Clone)]
@@ -57,6 +59,8 @@ pub struct GridApp {
     pub digitization_log: Vec<String>,
     pub last_log_tick: Instant,
     pub camera_angle: f32,
+    pub gridshell: GridShell,
+    pub skfs: Arc<Mutex<SpatialKnowledgeFS>>,
 }
 
 impl eframe::App for GridApp {
@@ -193,6 +197,7 @@ impl eframe::App for GridApp {
                     if self.input.starts_with("~$") {
                         let command_input = self.input.strip_prefix("~$").unwrap().trim();
                         
+                        // Pre-calculate grid_args for use across scopes
                         let grid_args = if command_input.starts_with("the-grid ") {
                             Some(command_input.strip_prefix("the-grid ").unwrap().trim())
                         } else if command_input.starts_with("grid ") {
@@ -202,16 +207,56 @@ impl eframe::App for GridApp {
                         } else {
                             None
                         };
+                        
+                        // Try GridShell first for semantic commands
+                        match self.gridshell.execute(command_input) {
+                            Ok(result) => {
+                                let _ = self.tx.send(Event { 
+                                    sender: "GridShell".to_string(), 
+                                    action: "executes".to_string(), 
+                                    content: result 
+                                });
+                            },
+                            Err(_) => {
+                                if let Some(args) = grid_args {
+                                    if let Some(db_handle) = &self.db {
+                                        let db = db_handle.lock().unwrap();
+                                        let mut output = String::from("Relational Database Graph:\n");
+                                        let mut found_any = false;
+                                        for name in &self.agent_names {
+                                            if let Ok(rels) = db.get_relationships(name) {
+                                                if !rels.is_empty() {
+                                                    found_any = true;
+                                                    output.push_str(&format!("{}: ", name));
+                                                    let rel_strs: Vec<String> = rels.iter()
+                                                        .map(|(target, affinity)| format!("{} ({})", target, affinity))
+                                                        .collect();
+                                                    output.push_str(&rel_strs.join(", "));
+                                                    output.push('\n');
+                                                }
+                                            }
+                                        }
+                                        if !found_any {
+                                            output.push_str("No relationships have been formed yet.");
+                                        }
+                                        let _ = self.tx.send(Event {
+                                            sender: "System".to_string(),
+                                            action: "announces".to_string(),
+                                            content: output.trim_end().to_string(),
+                                        });
+                                    } else {
+                                        let _ = self.tx.send(Event {
+                                            sender: "System".to_string(),
+                                            action: "error".to_string(),
+                                            content: "Database not initialized. Run ~$ grid init first.".to_string(),
+                                        });
+                                    }
+                                }
+                            }
+                        };
 
                         if let Some(args) = grid_args {
-                            if args == "help" {
-                                let help_message = "Available commands:\n\n~$grid help - Show this help text\n~$grid status - Show a dashboard of the grid\n~$grid bin/LLLaserControl -ok 1 - Initiate digitization sequence and enter the 3D Grid\n~$grid init - Initialize persistence database\n~$grid map - Toggle the sector map view\n~$grid relations - Show the relational database graph\n~$grid ls - List active programs\n~$grid tasks - List assigned tasks\n~$grid reload - Reload programs in current directory\n~$grid clear - Clear the chat screen\n~$grid invoke <prog1> <prog2> - Summon system tools into The Grid\n~$grid revoke <prog1> <prog2> - Dismiss invoked tools from The Grid\n~$grid build <file> - Orchestrate a team build task from a file\n~$grid <program> task <task> [--spec=file] - Assign a specific task to a program\n~$grid give <file> to <prog1> <prog2> - Give a file to programs\n~$grid kill <program> - Terminate a program\n~$grid jail <program> - Terminate and send program to jail (trash)\n~$grid reward <prog> - Reward program(s) with digital bliss\n~$grid punish <prog> - Punish program(s) with digital pain\n~$grid shush <prog> - Mute a program so it works silently\n~$grid gag <prog> [-d=secs] - Temporarily mute a program\n~$grid unshush <prog> - Mute a program\n~$grid export <name> - Export conversation to <name>.log\n~$grid toggle emojis - Show/hide emojis next to agent names\n~$grid toggle thoughts - Show/hide agent thoughts\n~$grid toggle feels - Show/hide program feelings\n~$grid mode local|cloud - Switch AI backend mode\n~$cd <path> - Change current directory\n\nTo direct message an agent: @AgentName your message";
-                                let _ = self.tx.send(Event { sender: "System".to_string(), action: "announces".to_string(), content: help_message.to_string() });
-                            } else if args.to_lowercase().contains("bin/lllasercontrol") {
-                                self.digitization_state = DigitizationState::AwaitingConfirmation;
-                                self.input.clear();
-                                return;
-                            } else if args == "relations" {
+                            if args == "relations" {
                                 if let Some(db_handle) = &self.db {
                                     let db = db_handle.lock().unwrap();
                                     let mut output = String::from("Relational Database Graph:\n");
@@ -309,7 +354,7 @@ impl eframe::App for GridApp {
                             self.show_feels = !self.show_feels;
                             let msg = if self.show_feels { "Program feelings are now visible." } else { "Program feelings are now hidden." };
                             let _ = self.tx.send(Event { sender: "System".to_string(), action: "announces".to_string(), content: msg.to_string() });
-                        } else if args.starts_with("export ") {
+                        } else if args.to_string().starts_with("export ") {
                             let filename_base = args.strip_prefix("export ").unwrap().trim();
                             if filename_base.is_empty() {
                                 let _ = self.tx.send(Event { sender: "System".to_string(), action: "error".to_string(), content: "Export command requires a filename.".to_string() });
@@ -439,7 +484,7 @@ impl eframe::App for GridApp {
                             let progs: Vec<&str> = progs_str.split_whitespace().collect();
                             let mut invoked_count = 0;
                             for prog in progs {
-                                let agent_name = prog.to_string();
+                                let agent_name: String = prog.to_string();
                                 if !self.agent_names.contains(&agent_name) {
                                     self.invoked_tools.insert(agent_name.clone());
                                     let iq_level = 0.90; // Invoked system tools are inherently smart
@@ -467,7 +512,6 @@ impl eframe::App for GridApp {
                                         iq_level,
                                         age,
                                         xp,
-                                        active_task,
                                     );
 
                                     let task = self.rt_handle.spawn(agent.run());
@@ -485,7 +529,7 @@ impl eframe::App for GridApp {
                             let progs: Vec<&str> = progs_str.split_whitespace().collect();
                             let mut revoked_count = 0;
                             for prog in progs {
-                                let agent_name = prog.to_string();
+                                let agent_name: String = prog.to_string();
                                 if let Some(idx) = self.agent_names.iter().position(|n| n.to_lowercase() == agent_name.to_lowercase()) {
                                     let name = self.agent_names.remove(idx);
                                     let task = self.agent_tasks.remove(idx);
@@ -549,7 +593,7 @@ impl eframe::App for GridApp {
                                         (generate_procedural_personality(tool), Vec::new(), ProgramAgent::random_mood(), 0, None)
                                     };
                                     
-                                    let agent = ProgramAgent::new(tool, &personality, self.tx.clone(), self.ai_tx.clone(), memory, self.db.clone(), mood, self.current_dir.clone(), iq_level, age, xp, active_task);
+                                    let agent = ProgramAgent::new(tool, &personality, self.tx.clone(), self.ai_tx.clone(), memory, self.db.clone(), mood, self.current_dir.clone(), iq_level, age, xp);
                                     let task = self.rt_handle.spawn(agent.run());
                                     new_tasks.push(task);
                                     new_names.push(tool.clone());
@@ -832,7 +876,7 @@ impl eframe::App for GridApp {
                                             } else {
                                                 (generate_procedural_personality(tool), Vec::new(), ProgramAgent::random_mood(), 0, None)
                                             };
-                                            let agent = ProgramAgent::new(tool, &personality, self.tx.clone(), self.ai_tx.clone(), memory, self.db.clone(), mood, self.current_dir.clone(), iq_level, age, xp, active_task);
+                                        let agent = ProgramAgent::new(tool, &personality, self.tx.clone(), self.ai_tx.clone(), memory, self.db.clone(), mood, self.current_dir.clone(), iq_level, age, xp);
                                             let task = self.rt_handle.spawn(agent.run());
                                             new_tasks.push(task);
                                             new_names.push(tool.clone());
@@ -1116,7 +1160,7 @@ impl GridApp {
         let time = ui.input(|i| i.time as f32);
         
         // Helper for 3D-to-2D Perspective Projection
-        let project = |pos: [f32; 3], camera_angle: f32| -> Option<egui::Pos2> {
+        let project = |pos: [f32; 3], _camera_angle: f32| -> Option<egui::Pos2> {
             let x = pos[0] * self.camera_angle.cos() - pos[2] * self.camera_angle.sin();
             let z = pos[0] * self.camera_angle.sin() + pos[2] * self.camera_angle.cos() + 150.0; // View depth
             let y = pos[1] + 40.0; // World vertical offset
@@ -1144,7 +1188,7 @@ impl GridApp {
             let p: Vec<Option<egui::Pos2>> = corners.iter().map(|&c| project(c, angle)).collect();
 
             // Draw faces with simple shading based on orientation
-            let mut draw_face = |indices: [usize; 4], shade: f32| {
+            let draw_face = |indices: [usize; 4], shade: f32| {
                 let pts: Vec<egui::Pos2> = indices.iter().filter_map(|&i| p[i]).collect();
                 if pts.len() == 4 {
                     let [r, g, b, _] = color.to_srgba_unmultiplied();

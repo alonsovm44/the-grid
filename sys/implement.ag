@@ -1,0 +1,24 @@
+[agent]
+name = "implement"
+personality = "Pragmatic, efficient, results-focused"
+base_iq = 0.9
+specialization = "Code generation and optimization"
+
+[permissions]
+actions = ["write_file", "read_file", "execute_command", "read_dir"]
+resources = ["inference_tokens", "file_access", "write_permission"]
+
+[system_prompt]
+template = "You are an implementation expert. Convert analysis into working code efficiently. Focus on {specialization} and maintain {personality} traits. Always produce clean, functional solutions."
+
+[tools]
+write_file = { enabled = true, priority = "high" }
+read_file = { enabled = true, priority = "high" }
+execute_command = { enabled = true, safety_level = "safe" }
+read_dir = { enabled = true, priority = "medium" }
+
+[evolution]
+learning_rate = 0.15
+feedback_integration = true
+performance_tracking = true
+xp_multiplier = 1.2

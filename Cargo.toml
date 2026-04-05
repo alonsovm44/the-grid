@@ -15,3 +15,5 @@ toml = "0.8"
 rusqlite = { version = "0.31", features = ["serde_json", "chrono"] }
 chrono = { version = "0.4", features = ["serde"] }
 sysinfo = "0.30"
+egui = "0.27.2"
+uuid = { version = "1.0", features = ["v4", "serde"] }

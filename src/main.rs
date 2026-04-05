@@ -10,10 +10,12 @@ use tokio::sync::{broadcast, mpsc};
 mod event;
 mod app;
 mod agent;
-
+mod agent_blueprint;
 mod ai_provider;
 mod config;
-mod database; 
+mod database;
+mod filesystem;
+mod gridshell;
 mod arena;
 
 pub use event::Event;
@@ -22,6 +24,8 @@ use ai_provider::{run_ai_engine, AiRequest};
 use config::Config;
 use database::Database;
 use app::{GridApp, DigitizationState};
+use gridshell::GridShell;
+use filesystem::SpatialKnowledgeFS;
 
 
 fn main() -> eframe::Result<()> {
@@ -143,6 +147,18 @@ fn main() -> eframe::Result<()> {
 
             let user_name = whoami::username();
 
+            // Initialize GridShell and SKFS
+            let skfs = Arc::new(Mutex::new(SpatialKnowledgeFS::new()));
+            {
+                let mut skfs_lock = skfs.lock().unwrap();
+                skfs_lock.initialize_with_defaults();
+            }
+
+            let mut gridshell = GridShell::new(tx.clone(), skfs.clone());
+            if let Err(e) = gridshell.initialize() {
+                eprintln!("Failed to initialize GridShell: {}", e);
+            }
+
             // A palette of classic 90s terminal colors for the agents
             let color_palette = vec![
                 Color32::from_rgb(0, 255, 0),     // Terminal Green
@@ -183,11 +199,13 @@ fn main() -> eframe::Result<()> {
                 last_active_agent: None,
                 map_user_pos: egui::pos2(0.0, 0.0),
                 file_positions: HashMap::new(),
-                agent_3d_positions: HashMap::new(), // <--- ADD THIS LINE
+                agent_3d_positions: HashMap::new(),
                 digitization_state: DigitizationState::Booting(0),
                 digitization_log: Vec::new(),
                 last_log_tick: Instant::now(),
                 camera_angle: 0.0,
+                gridshell: gridshell,
+                skfs: skfs,
             })
         }),
     )

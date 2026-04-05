@@ -21,3 +21,4 @@ Dev diary kept with Diaryx
 [2026-04-02 11:37:10] agent should check the output of a command like git add before git commits 
 [2026-04-02 15:15:27] ill add UI config menu
 [2026-04-02 22:13:11] i might add a UI config menu
+[2026-04-04 23:42:41] i might add a feature where the programs refer to their grid asa {system name} grid
