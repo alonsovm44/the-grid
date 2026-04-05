@@ -275,6 +275,14 @@ impl eframe::App for GridApp {
                                         self.db = Some(Arc::new(Mutex::new(db_conn)));
                                         let _ = self.tx.send(Event { sender: "System".to_string(), action: "announces".to_string(), content: "Database initialized. Agents will now have persistent memory.".to_string() });
                                         
+                                        // Milestone 1.3: Scan directory and populate SKFS
+                                        {
+                                            let mut skfs = self.skfs.lock().unwrap();
+                                            skfs.scan_directory(&self.current_dir);
+                                            let file_count = skfs.files.len();
+                                            let _ = self.tx.send(Event { sender: "System".to_string(), action: "announces".to_string(), content: format!("SKFS bootstrapped with {} files from local disk.", file_count) });
+                                        }
+                                        
                                         // Respawn agents to use the new database
                                         let _ = self.tx.send(Event { sender: "System".to_string(), action: "announces".to_string(), content: "Re-spawning agents with persistence enabled...".to_string() });
                                         

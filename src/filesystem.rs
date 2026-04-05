@@ -342,6 +342,46 @@ impl SpatialKnowledgeFS {
         id
     }
 
+    pub fn scan_directory(&mut self, path: &str) {
+        if let Ok(entries) = std::fs::read_dir(path) {
+            for entry in entries.flatten() {
+                if let Ok(metadata) = entry.metadata() {
+                    if metadata.is_file() {
+                        let name = entry.file_name().to_string_lossy().into_owned();
+                        
+                        // Skip files already in SKFS to avoid duplicates
+                        if self.files.values().any(|f| f.name == name) {
+                            continue;
+                        }
+
+                        // Deterministic position based on name hashing (Milestone 1.3)
+                        use std::collections::hash_map::DefaultHasher;
+                        use std::hash::{Hash, Hasher};
+                        let mut hasher = DefaultHasher::new();
+                        name.hash(&mut hasher);
+                        let hash = hasher.finish();
+                        
+                        let x = (hash % 400) as f32 - 200.0;
+                        let y = ((hash >> 8) % 400) as f32 - 200.0;
+                        let z = ((hash >> 16) % 400) as f32 - 200.0;
+                        
+                        let mut tags = HashSet::new();
+                        if let Some(ext) = entry.path().extension().and_then(|s| s.to_str()) {
+                            match ext {
+                                "rs" => { tags.insert("source".to_string()); tags.insert("rust".to_string()); },
+                                "md" => { tags.insert("docs".to_string()); tags.insert("markdown".to_string()); },
+                                "toml" => { tags.insert("config".to_string()); tags.insert("toml".to_string()); },
+                                _ => { tags.insert("data".to_string()); }
+                            }
+                        }
+
+                        self.create_file_with_position(name, Vec::new(), tags, [x, y, z]);
+                    }
+                }
+            }
+        }
+    }
+
     pub fn initialize_with_defaults(&mut self) {
         // Create some default directories/files in alonso/ (user space)
         let mut default_files = Vec::new();

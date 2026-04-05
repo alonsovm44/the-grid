@@ -563,13 +563,13 @@ impl AgentRegistry {
     }
 
     pub fn load_from_sbin(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let sys_path = std::path::Path::new("sys");
+        let sbin_path = std::path::Path::new("sys").join("sbin");
         
-        if !sys_path.exists() {
-            std::fs::create_dir_all(&sys_path)?;
+        if !sbin_path.exists() {
+            std::fs::create_dir_all(&sbin_path)?;
         }
         
-        for entry in std::fs::read_dir(&sys_path)? {
+        for entry in std::fs::read_dir(&sbin_path)? {
             let entry = entry?;
             let path = entry.path();
             

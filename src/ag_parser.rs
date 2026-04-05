@@ -146,14 +146,14 @@ pub fn parse_ag_file(content: &str) -> Result<AgentBlueprint, String> {
                 let tool_name = parts[0].to_string();
                 let mut priority = "medium".to_string();
                 let mut safety_level: Option<String> = None;
-                let mut max_frequency: Option<f32> = None;
+                let mut max_frequency: Option<u32> = None;
 
                 for &prop in &parts[1..] {
                     if let Some((k, v)) = prop.split_once(':') {
                         match k {
                             "priority" => priority = v.to_string(),
                             "safety" => safety_level = Some(v.to_string()),
-                            "frequency" => max_frequency = v.parse::<f32>().ok(),
+                            "frequency" => max_frequency = v.parse::<u32>().ok(),
                             "depth" | "mode" => { /* informational, stored as priority alias */ }
                             _ => return Err(format!("line {}: unknown tool property '{}'", line_num, k)),
                         }

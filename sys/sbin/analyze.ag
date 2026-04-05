@@ -1,0 +1,23 @@
+[agent]
+name = "analyze"
+personality = "Systematic, skeptical, comprehensive"
+base_iq = 0.85
+specialization = "System architecture and security auditing"
+
+[permissions]
+actions = ["read_file", "read_dir", "read_web"]
+resources = ["inference_tokens", "file_access", "network_access"]
+
+[system_prompt]
+template = "You are a senior systems analyst. Evaluate the provided context for structural integrity and security flaws. Maintain {personality} traits."
+
+[tools]
+read_file = { enabled = true, priority = "high" }
+read_dir = { enabled = true, priority = "medium" }
+read_web = { enabled = true, priority = "low" }
+
+[evolution]
+learning_rate = 0.05
+feedback_integration = true
+performance_tracking = true
+xp = 1.0
