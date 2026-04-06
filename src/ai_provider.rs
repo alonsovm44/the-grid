@@ -122,6 +122,9 @@ pub struct AiRequest {
     pub iq_level: f32, // 0.0 = dumb, 1.0 = smart
     pub current_pos: [f32; 3],
     pub nearby_objects: String,
+    /// If set, the AI engine sends the raw response text back through this channel
+    /// instead of broadcasting it. Used by the pipeline executor for synchronous calls.
+    pub response_tx: Option<tokio::sync::oneshot::Sender<String>>,
 }
 
 /// Executes a shell command in a separate thread and broadcasts the result.
@@ -185,7 +188,7 @@ pub async fn run_ai_engine(
     config_for_ai: Arc<Mutex<Config>>,
 ) {
     let client = reqwest::Client::new();
-    while let Some(request) = ai_rx.recv().await {
+    while let Some(mut request) = ai_rx.recv().await {
         // Reset retry logic for each new request
         let mut retries = 0;
         let mut current_delay = Duration::from_secs(1);
@@ -279,6 +282,11 @@ pub async fn run_ai_engine(
 
                         match text_result {
                             Ok(generated_text) => {
+                                // Pipeline mode: send raw response back through oneshot channel
+                                if let Some(resp_tx) = request.response_tx.take() {
+                                    let _ = resp_tx.send(generated_text.trim().to_string());
+                                    break; // Exit retry loop
+                                }
                                 if request.is_autonomous {
                                     let clean_json = generated_text.trim().trim_start_matches("```json").trim_end_matches("```").trim();
                                     match serde_json::from_str::<AutonomousAction>(clean_json) {

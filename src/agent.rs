@@ -693,6 +693,7 @@ Based on your personality, mood, and the context, what is your short, direct res
             iq_level: self.iq_level,
             current_pos: self.spatial_pos,
             nearby_objects: String::new(),
+            response_tx: None,
 
         }).await;
 
@@ -827,7 +828,7 @@ Based on your personality, mood, and the context, what is your short, direct opi
 
 
 
-                let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: false, is_autonomous: false, iq_level: self.iq_level, current_pos: self.spatial_pos, nearby_objects: String::new() }).await;
+                let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: false, is_autonomous: false, iq_level: self.iq_level, current_pos: self.spatial_pos, nearby_objects: String::new(), response_tx: None }).await;
 
             }
 
@@ -956,7 +957,7 @@ Based on your personality, mood, and the context, what is your short, direct rea
 
                 self.simulate_typing();
 
-                let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: false, is_autonomous: false, iq_level: self.iq_level, current_pos: self.spatial_pos, nearby_objects: String::new() }).await;
+                let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: false, is_autonomous: false, iq_level: self.iq_level, current_pos: self.spatial_pos, nearby_objects: String::new(), response_tx: None }).await;
 
             }
 
@@ -1045,7 +1046,7 @@ Based on your personality, mood, and the context, what is your short, direct rea
 
                     self.simulate_typing();
 
-                    let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: false, is_autonomous: false, iq_level: self.iq_level, current_pos: self.spatial_pos, nearby_objects: String::new() }).await;
+                    let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: false, is_autonomous: false, iq_level: self.iq_level, current_pos: self.spatial_pos, nearby_objects: String::new(), response_tx: None }).await;
 
                 } else {
 
@@ -1171,7 +1172,7 @@ Based on your personality, mood, and the context, what is your short, direct rea
 
         let curious_guidance = if self.current_mood == "curious" {
 
-            "Also, if you are curious, ask a question about files in the directory, the user\'s intent, or what it means to be a human vs program while staying in character."
+            "Also, if you are curious, ask a question about files in the directory, the user's intent, or what it means to be a human vs program while staying in character."
 
         } else {
 
@@ -1335,7 +1336,10 @@ Based on your personality, mood, and the context, what is your short, direct rea
 
 - If a task requires a different tool or general shell manipulation, you MUST use "delegate_task" to hand it off to the correct program.
 
-- All programs are fully authorized to use "write_file" to write configuration, text, or source code."#, name = self.name);
+- All programs are fully authorized to use "write_file" to write configuration, text, or source code."#,
+
+            name = self.name,
+        );
 
 
 
@@ -1519,6 +1523,7 @@ JSON FORMAT:
             iq_level: self.iq_level,
             current_pos: self.spatial_pos,
             nearby_objects: String::new(),
+            response_tx: None,
 
         }).await;
 
@@ -1742,6 +1747,7 @@ JSON FORMAT:
             iq_level: 1.0, // Maximize IQ for executing tasks accurately
             current_pos: self.spatial_pos,
             nearby_objects: String::new(),
+            response_tx: None,
 
         }).await;
 
@@ -1963,6 +1969,7 @@ JSON FORMAT:
             iq_level: 1.0, // Maximize IQ for executing tasks accurately
             current_pos: self.spatial_pos,
             nearby_objects: String::new(),
+            response_tx: None,
 
         }).await;
 
@@ -2203,6 +2210,7 @@ JSON FORMAT:
                             iq_level: self.iq_level,
                             current_pos: self.spatial_pos,
                             nearby_objects: String::new(),
+                            response_tx: None,
 
                         }).await;
 
@@ -2342,7 +2350,22 @@ JSON FORMAT:
 
                         self.simulate_typing();
 
-                        let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: true, is_autonomous: true, iq_level: 1.0, current_pos: self.spatial_pos, nearby_objects: String::new() }).await;
+                        let _ = self.ai_tx.send(AiRequest {
+
+                            agent_name: self.name.clone(),
+
+                            prompt,
+
+                            is_json_format: true,
+
+                            is_autonomous: true,
+
+                            iq_level: 1.0,
+                            current_pos: self.spatial_pos,
+                            nearby_objects: String::new(),
+                            response_tx: None,
+
+                        }).await;
 
                     }
 
@@ -2420,7 +2443,22 @@ JSON FORMAT:
 
                         self.simulate_typing();
 
-                        let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: true, is_autonomous: true, iq_level: 1.0, current_pos: self.spatial_pos, nearby_objects: String::new() }).await;
+                        let _ = self.ai_tx.send(AiRequest {
+
+                            agent_name: self.name.clone(),
+
+                            prompt,
+
+                            is_json_format: true,
+
+                            is_autonomous: true,
+
+                            iq_level: 1.0,
+                            current_pos: self.spatial_pos,
+                            nearby_objects: String::new(),
+                            response_tx: None,
+
+                        }).await;
 
                     }
 
@@ -2481,7 +2519,7 @@ React to this reward. Do you express gratitude, gloat, or act motivated? Keep it
 
                     self.simulate_typing();
 
-                    let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: false, is_autonomous: false, iq_level: self.iq_level, current_pos: self.spatial_pos, nearby_objects: String::new() }).await;
+                    let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: false, is_autonomous: false, iq_level: self.iq_level, current_pos: self.spatial_pos, nearby_objects: String::new(), response_tx: None }).await;
 
                 }
 
@@ -2514,7 +2552,7 @@ React to this punishment. Do you beg for mercy, curse the user, or silently endu
 
                     self.simulate_typing();
 
-                    let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: false, is_autonomous: false, iq_level: self.iq_level, current_pos: self.spatial_pos, nearby_objects: String::new() }).await;
+                    let _ = self.ai_tx.send(AiRequest { agent_name: self.name.clone(), prompt, is_json_format: false, is_autonomous: false, iq_level: self.iq_level, current_pos: self.spatial_pos, nearby_objects: String::new(), response_tx: None }).await;
 
                 }
 

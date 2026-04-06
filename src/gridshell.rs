@@ -4,6 +4,18 @@ use std::sync::{Arc, Mutex};
 use crate::agent_blueprint::{AgentBlueprint, ToolConfig, AgentEvolution};
 use crate::event::Event;
 use crate::filesystem::SpatialKnowledgeFS;
+use crate::pipeline::PipelineStage;
+
+/// The result of a GridShell command execution.
+#[derive(Debug, Clone)]
+pub enum GridShellResult {
+    /// Immediate text output (most commands)
+    Output(String),
+    /// A pipeline ready for async execution (requires AI engine)
+    PipelineReady(Vec<PipelineStage>),
+    /// A .gsh script parsed into commands for sequential execution
+    ScriptReady(Vec<String>),
+}
 
 #[derive(Debug, Clone)]
 pub enum GridShellCommand {
@@ -72,6 +84,7 @@ pub struct GridShell {
     pub skfs: Arc<Mutex<SpatialKnowledgeFS>>,
     pub variables: HashMap<String, String>,
     pub tx: tokio::sync::broadcast::Sender<Event>,
+    pub last_trace: Option<crate::pipeline::PipelineTrace>,
 }
 
 impl GridShell {
@@ -81,6 +94,7 @@ impl GridShell {
             skfs,
             variables: HashMap::new(),
             tx,
+            last_trace: None,
         }
     }
 
@@ -94,14 +108,25 @@ impl GridShell {
         Ok(())
     }
 
-    pub fn execute(&mut self, input: &str) -> Result<String, String> {
+    pub fn execute(&mut self, input: &str) -> Result<GridShellResult, String> {
         let trimmed = input.trim();
         
         // Handle variable assignment first
         if trimmed.contains('=') && !trimmed.contains('|') {
             if let Ok(assignment) = self.parse_variable_assignment(trimmed) {
-                return self.execute_variable_assignment(assignment);
+                return self.execute_variable_assignment(assignment).map(GridShellResult::Output);
             }
+        }
+        
+        // Handle .gsh script execution: run <script.gsh>
+        if trimmed.starts_with("run ") {
+            let path = trimmed[4..].trim().trim_matches('"');
+            return self.execute_run_script(path);
+        }
+        
+        // Handle trace command
+        if trimmed == "trace" {
+            return self.execute_trace().map(GridShellResult::Output);
         }
         
         // Parse main command
@@ -109,34 +134,34 @@ impl GridShell {
         
         match command {
             GridShellCommand::AgentCall { agent, args } => {
-                self.execute_agent_call(&agent, &args)
+                self.execute_agent_call(&agent, &args).map(GridShellResult::Output)
             },
             GridShellCommand::Pipeline { agents } => {
                 self.execute_semantic_pipeline(agents)
             },
             GridShellCommand::VariableAssignment { variable, command: cmd } => {
-                self.execute_variable_assignment_with_command(variable, cmd)
+                self.execute_variable_assignment_with_command(variable, cmd).map(GridShellResult::Output)
             },
             GridShellCommand::Conditional { condition, then_branch, else_branch } => {
-                self.execute_conditional(condition, then_branch, else_branch)
+                self.execute_conditional(condition, then_branch, else_branch).map(GridShellResult::Output)
             },
             GridShellCommand::CreateAgent { name, personality, specialization, tools } => {
-                self.create_custom_agent(name, personality, specialization, tools)
+                self.create_custom_agent(name, personality, specialization, tools).map(GridShellResult::Output)
             },
             GridShellCommand::Find { tags, near, radius } => {
-                self.execute_find(tags, near, radius)
+                self.execute_find(tags, near, radius).map(GridShellResult::Output)
             },
             GridShellCommand::Move { target, to } => {
-                self.execute_move(target, to)
+                self.execute_move(target, to).map(GridShellResult::Output)
             },
             GridShellCommand::List { tags, sort_by } => {
-                self.execute_list(tags, sort_by)
+                self.execute_list(tags, sort_by).map(GridShellResult::Output)
             },
             GridShellCommand::Status => {
-                self.execute_status()
+                self.execute_status().map(GridShellResult::Output)
             },
             GridShellCommand::Help => {
-                self.execute_help()
+                self.execute_help().map(GridShellResult::Output)
             },
         }
     }
@@ -154,6 +179,16 @@ impl GridShell {
             return Ok(GridShellCommand::Status);
         }
         
+        // Bare list command
+        if input == "list" || input == "ls" {
+            return Ok(GridShellCommand::List { tags: None, sort_by: None });
+        }
+        
+        // Bare find command
+        if input == "find" {
+            return Ok(GridShellCommand::Find { tags: None, near: None, radius: None });
+        }
+        
         // Pipeline detection
         if input.contains('|') {
             return self.parse_pipeline(input);
@@ -163,6 +198,31 @@ impl GridShell {
         if input.contains('=') && !input.contains('|') {
             let (variable, command) = self.parse_variable_assignment(input)?;
             return Ok(GridShellCommand::VariableAssignment { variable, command });
+        }
+        
+        // List with arguments: list --tags "source" --sort "name"
+        if input.starts_with("list ") || input.starts_with("ls ") {
+            let args = if input.starts_with("list ") { &input[5..] } else { &input[3..] };
+            let params = self.parse_parameters(args);
+            let tags = params.get("tags").or(params.get("tag"))
+                .map(|t| t.split(',').map(|s| s.trim().to_string()).collect());
+            let sort_by = params.get("sort").or(params.get("sort-by")).cloned();
+            return Ok(GridShellCommand::List { tags, sort_by });
+        }
+        
+        // Find with arguments: find --tags "source,rust" --near [x,y,z] --radius 50
+        if input.starts_with("find ") {
+            let args = &input[5..];
+            let params = self.parse_parameters(args);
+            let tags = params.get("tags").or(params.get("tag"))
+                .map(|t| t.split(',').map(|s| s.trim().to_string()).collect());
+            return Ok(GridShellCommand::Find { tags, near: None, radius: None });
+        }
+        
+        // Create agent: create_agent "name"
+        if input.starts_with("create_agent ") {
+            let name = input[13..].trim().trim_matches('"').to_string();
+            return Ok(GridShellCommand::CreateAgent { name, personality: None, specialization: None, tools: None });
         }
         
         // Agent calls with parameters
@@ -269,23 +329,33 @@ impl GridShell {
         }
     }
 
-    fn execute_semantic_pipeline(&mut self, agents: Vec<ParsedAgentCall>) -> Result<String, String> {
-        let mut pipeline_description = String::new();
+    fn execute_semantic_pipeline(&mut self, agents: Vec<ParsedAgentCall>) -> Result<GridShellResult, String> {
+        let mut stages = Vec::new();
+        let mut description_parts = Vec::new();
         
-        for (i, agent_call) in agents.iter().enumerate() {
-            if i > 0 {
-                pipeline_description.push_str(" | ");
-            }
-            pipeline_description.push_str(&format!("{} {}", agent_call.agent, agent_call.args));
+        // Validate all agents exist and build pipeline stages
+        for agent_call in &agents {
+            let blueprint = self.registry.get_blueprint(&agent_call.agent)
+                .cloned()
+                .ok_or_else(|| format!("Pipeline error: agent '{}' not found in registry", agent_call.agent))?;
+            
+            description_parts.push(format!("{} {}", agent_call.agent, agent_call.args));
+            
+            stages.push(PipelineStage {
+                agent_name: agent_call.agent.clone(),
+                blueprint,
+                args: agent_call.args.clone(),
+            });
         }
         
+        let description = description_parts.join(" | ");
         let _ = self.tx.send(Event {
             sender: "GridShell".to_string(),
             action: "creates_pipeline".to_string(),
-            content: pipeline_description.clone(),
+            content: description,
         });
         
-        Ok(format!("Created semantic pipeline: {}", pipeline_description))
+        Ok(GridShellResult::PipelineReady(stages))
     }
 
     fn execute_variable_assignment(&mut self, assignment: (String, ParsedAgentCall)) -> Result<String, String> {
@@ -481,7 +551,15 @@ System:
     fn execute_gridshell_command(&mut self, command: GridShellCommand) -> Result<String, String> {
         match command {
             GridShellCommand::AgentCall { agent, args } => self.execute_agent_call(&agent, &args),
-            GridShellCommand::Pipeline { agents } => self.execute_semantic_pipeline(agents),
+            GridShellCommand::Pipeline { agents } => {
+                // For conditional branches, pipelines can't be async-executed inline
+                match self.execute_semantic_pipeline(agents) {
+                    Ok(GridShellResult::PipelineReady(_)) => Ok("Pipeline queued for execution".to_string()),
+                    Ok(GridShellResult::Output(s)) => Ok(s),
+                    Ok(GridShellResult::ScriptReady(_)) => Ok("Script queued for execution".to_string()),
+                    Err(e) => Err(e),
+                }
+            },
             GridShellCommand::VariableAssignment { variable, command: cmd } => self.execute_variable_assignment_with_command(variable, cmd),
             GridShellCommand::Conditional { condition, then_branch, else_branch } => self.execute_conditional(condition, then_branch, else_branch),
             GridShellCommand::CreateAgent { name, personality, specialization, tools } => self.create_custom_agent(name, personality, specialization, tools),
@@ -491,6 +569,35 @@ System:
             GridShellCommand::Status => self.execute_status(),
             GridShellCommand::Help => self.execute_help(),
         }
+    }
+
+    fn execute_trace(&self) -> Result<String, String> {
+        match &self.last_trace {
+            Some(trace) => {
+                let mut output = String::from("=== PIPELINE TRACE ===\n");
+                for ctx in &trace.stages {
+                    output.push_str(&format!(
+                        "\n--- Stage {}/{} [{}] ---\nINPUT: {}\nOUTPUT: {}\n",
+                        ctx.stage, ctx.total_stages, ctx.agent,
+                        if ctx.input.len() > 300 { format!("{}...", &ctx.input[..300]) } else { ctx.input.clone() },
+                        if ctx.output.len() > 300 { format!("{}...", &ctx.output[..300]) } else { ctx.output.clone() },
+                    ));
+                }
+                output.push_str(&format!("\n=== FINAL OUTPUT ===\n{}", trace.final_output));
+                Ok(output)
+            },
+            None => Ok("No pipeline trace available. Run a pipeline first.".to_string()),
+        }
+    }
+
+    fn execute_run_script(&self, path: &str) -> Result<GridShellResult, String> {
+        let content = std::fs::read_to_string(path)
+            .map_err(|e| format!("Failed to read script '{}': {}", path, e))?;
+        let commands = crate::pipeline::parse_gsh_file(&content);
+        if commands.is_empty() {
+            return Err(format!("Script '{}' contains no commands", path));
+        }
+        Ok(GridShellResult::ScriptReady(commands))
     }
 
     fn create_custom_agent(&mut self, name: String, personality: Option<String>, specialization: Option<String>, tools: Option<Vec<String>>) -> Result<String, String> {
@@ -525,9 +632,24 @@ System:
             },
         };
         
-        self.registry.add_blueprint(name.clone(), blueprint);
+        self.registry.add_blueprint(name.clone(), blueprint.clone());
         
-        Ok(format!("Created custom agent '{}'", name))
+        // Persist blueprint to sys/sbin/ as a .ag file
+        let sbin_path = std::path::Path::new("sys").join("sbin");
+        let _ = std::fs::create_dir_all(&sbin_path);
+        let ag_path = sbin_path.join(format!("{}.ag", name));
+        match toml::to_string(&blueprint) {
+            Ok(toml_str) => {
+                if let Err(e) = std::fs::write(&ag_path, toml_str) {
+                    return Ok(format!("Created agent '{}' (in-memory only, failed to write .ag: {})", name, e));
+                }
+            },
+            Err(e) => {
+                return Ok(format!("Created agent '{}' (in-memory only, failed to serialize: {})", name, e));
+            }
+        }
+        
+        Ok(format!("Created custom agent '{}' and saved to {}", name, ag_path.display()))
     }
 }
 

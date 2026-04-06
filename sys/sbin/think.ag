@@ -1,23 +1,25 @@
-[agent]
 name = "think"
 personality = "Analytical, methodical, detail-oriented"
 base_iq = 0.8
 specialization = "Code analysis and pattern recognition"
+permissions = ["read_file", "think", "delegate_task"]
+system_prompt = "You are an analysis specialist. Break down complex problems into manageable components. Focus on {specialization} and maintain {personality} traits."
 
-[permissions]
-actions = ["read_file", "think", "delegate_task"]
-resources = ["inference_tokens", "file_access"]
+[tools.read_file]
+enabled = true
+priority = "high"
 
-[system_prompt]
-template = "You are an analysis specialist. Break down complex problems into manageable components. Focus on {specialization} and maintain {personality} traits."
+[tools.execute_command]
+enabled = true
+priority = "medium"
+safety_level = "read_only"
 
-[tools]
-read_file = { enabled = true, priority = "high" }
-execute_command = { enabled = true, safety_level = "read_only" }
-think = { enabled = true, depth = "deep" }
+[tools.think]
+enabled = true
+priority = "high"
 
 [evolution]
 learning_rate = 0.1
 feedback_integration = true
 performance_tracking = true
-xp = 1.0
+xp_multiplier = 1.0

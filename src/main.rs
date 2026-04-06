@@ -17,6 +17,7 @@ mod config;
 mod database;
 mod filesystem;
 mod gridshell;
+mod pipeline;
 mod arena;
 
 pub use event::Event;

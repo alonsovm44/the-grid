@@ -14,7 +14,8 @@ use crate::config::Config;
 use crate::database::Database;
 use crate::event::Event;
 use crate::filesystem::SpatialKnowledgeFS;
-use crate::gridshell::GridShell;
+use crate::gridshell::{GridShell, GridShellResult};
+use crate::pipeline;
 use crate::{generate_procedural_personality, spawn_agents_for_directory, ProgramAgent};
 
 #[derive(PartialEq, Clone)]
@@ -209,13 +210,91 @@ impl eframe::App for GridApp {
                         };
                         
                         // Try GridShell first for semantic commands
+                        let mut handled = false;
                         match self.gridshell.execute(command_input) {
-                            Ok(result) => {
+                            Ok(GridShellResult::Output(result)) => {
                                 let _ = self.tx.send(Event { 
                                     sender: "GridShell".to_string(), 
                                     action: "executes".to_string(), 
                                     content: result 
                                 });
+                                handled = true;
+                            },
+                            Ok(GridShellResult::PipelineReady(stages)) => {
+                                // Spawn async pipeline execution
+                                let ai_tx = self.ai_tx.clone();
+                                let event_tx = self.tx.clone();
+                                self.rt_handle.spawn(async move {
+                                    match pipeline::execute_pipeline(stages, ai_tx, event_tx.clone()).await {
+                                        Ok(trace) => {
+                                            let _ = event_tx.send(Event {
+                                                sender: "Pipeline".to_string(),
+                                                action: "announces".to_string(),
+                                                content: format!("Pipeline finished. Use 'trace' to inspect."),
+                                            });
+                                            // Note: trace is stored via event; gridshell.last_trace updated below
+                                        },
+                                        Err(e) => {
+                                            let _ = event_tx.send(Event {
+                                                sender: "Pipeline".to_string(),
+                                                action: "error".to_string(),
+                                                content: format!("Pipeline failed: {}", e),
+                                            });
+                                        }
+                                    }
+                                });
+                                handled = true;
+                            },
+                            Ok(GridShellResult::ScriptReady(commands)) => {
+                                // Execute .gsh script commands sequentially
+                                let _ = self.tx.send(Event {
+                                    sender: "GridShell".to_string(),
+                                    action: "announces".to_string(),
+                                    content: format!("Executing .gsh script ({} commands)...", commands.len()),
+                                });
+                                for (i, cmd) in commands.iter().enumerate() {
+                                    let _ = self.tx.send(Event {
+                                        sender: "GridShell".to_string(),
+                                        action: "announces".to_string(),
+                                        content: format!("[{}/{}] {}", i + 1, commands.len(), cmd),
+                                    });
+                                    match self.gridshell.execute(cmd) {
+                                        Ok(GridShellResult::Output(out)) => {
+                                            let _ = self.tx.send(Event {
+                                                sender: "GridShell".to_string(),
+                                                action: "executes".to_string(),
+                                                content: out,
+                                            });
+                                        },
+                                        Ok(GridShellResult::PipelineReady(stages)) => {
+                                            let ai_tx = self.ai_tx.clone();
+                                            let event_tx = self.tx.clone();
+                                            self.rt_handle.spawn(async move {
+                                                let _ = pipeline::execute_pipeline(stages, ai_tx, event_tx).await;
+                                            });
+                                        },
+                                        Ok(GridShellResult::ScriptReady(_)) => {
+                                            let _ = self.tx.send(Event {
+                                                sender: "GridShell".to_string(),
+                                                action: "error".to_string(),
+                                                content: "Nested .gsh scripts are not supported.".to_string(),
+                                            });
+                                        },
+                                        Err(e) => {
+                                            let _ = self.tx.send(Event {
+                                                sender: "GridShell".to_string(),
+                                                action: "error".to_string(),
+                                                content: format!("Script error: {}", e),
+                                            });
+                                        }
+                                    }
+                                }
+                                let _ = self.tx.send(Event {
+                                    sender: "GridShell".to_string(),
+                                    action: "announces".to_string(),
+                                    content: "Script execution complete.".to_string(),
+                                });
+                                handled = true;
                             },
                             Err(_) => {
                                 // Fall through to specialized grid system commands if GridShell 
@@ -223,7 +302,7 @@ impl eframe::App for GridApp {
                             }
                         };
 
-                        if let Some(args) = grid_args {
+                        if !handled { if let Some(args) = grid_args {
                             if args == "relations" {
                                 if let Some(db_handle) = &self.db {
                                     let db = db_handle.lock().unwrap();
@@ -259,9 +338,10 @@ impl eframe::App for GridApp {
                                 }
                         } else if args == "help" {
                             match self.gridshell.execute("help") {
-                                Ok(help_text) => {
+                                Ok(GridShellResult::Output(help_text)) => {
                                     let _ = self.tx.send(Event { sender: "System".to_string(), action: "announces".to_string(), content: help_text });
                                 },
+                                Ok(_) => {},
                                 Err(e) => {
                                     let _ = self.tx.send(Event { sender: "System".to_string(), action: "error".to_string(), content: e });
                                 }
@@ -472,17 +552,29 @@ impl eframe::App for GridApp {
                                 let agent_name: String = prog.to_string();
                                 if !self.agent_names.contains(&agent_name) {
                                     self.invoked_tools.insert(agent_name.clone());
-                                    let iq_level = 0.90; // Invoked system tools are inherently smart
                                     let age = Duration::from_secs(86400 * 365 * 5); // Treat as established tools
                                     
-                                    let (personality, memory, mood, xp, active_task) = if let Some(db_lock) = &self.db {
+                                    // Check blueprint registry first for personality/IQ
+                                    let blueprint = self.gridshell.registry.get_blueprint(&agent_name).cloned();
+                                    
+                                    let (bp_personality, bp_iq) = if let Some(ref bp) = blueprint {
+                                        (bp.personality.clone(), bp.base_iq)
+                                    } else {
+                                        (String::new(), 0.90)
+                                    };
+                                    
+                                    let (personality, memory, mood, xp, _active_task) = if let Some(db_lock) = &self.db {
                                         let db_handle = db_lock.lock().unwrap();
                                         match db_handle.get_agent_state(&agent_name) {
                                             Ok(Some(state)) => (state.personality, state.memory, state.mood, state.xp, state.active_task),
-                                            _ => (generate_procedural_personality(&agent_name), Vec::new(), ProgramAgent::random_mood(), 0, None),
+                                            _ => {
+                                                let p = if !bp_personality.is_empty() { bp_personality.clone() } else { generate_procedural_personality(&agent_name) };
+                                                (p, Vec::new(), ProgramAgent::random_mood(), 0, None)
+                                            },
                                         }
                                     } else {
-                                        (generate_procedural_personality(&agent_name), Vec::new(), ProgramAgent::random_mood(), 0, None)
+                                        let p = if !bp_personality.is_empty() { bp_personality.clone() } else { generate_procedural_personality(&agent_name) };
+                                        (p, Vec::new(), ProgramAgent::random_mood(), 0, None)
                                     };
 
                                     let agent = ProgramAgent::new(
@@ -494,7 +586,7 @@ impl eframe::App for GridApp {
                                         self.db.clone(),
                                         mood,
                                         self.current_dir.clone(),
-                                        iq_level,
+                                        bp_iq,
                                         age,
                                         xp,
                                     );
@@ -882,11 +974,12 @@ impl eframe::App for GridApp {
                                     });
                                 }
                             }
-                        } else {
+                        } else if !handled {
                             // Direct shell commands
                             let command_str = command_input.to_string();
                             ai_provider::execute_command_and_broadcast(command_str, self.tx.clone(), self.user_name.clone());
                         }
+                        } // close if !handled
                     } else {
                         // Dispatch user input as a normal chat message
                         let _ = self.tx.send(Event { sender: self.user_name.clone(), action: "speaks".to_string(), content: self.input.clone() });
