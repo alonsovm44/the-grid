@@ -64,7 +64,7 @@ pub struct ProgramAgent {
 
     spatial_pos: [f32; 3],
 
-    grid_name: String,
+    _grid_name: String,
 
 }
 
@@ -296,7 +296,7 @@ impl ProgramAgent {
 
             spatial_pos: [0.0, 0.0, 0.0],
 
-            grid_name,
+            _grid_name: grid_name,
 
         }
 

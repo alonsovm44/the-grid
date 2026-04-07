@@ -228,7 +228,7 @@ impl eframe::App for GridApp {
                                 let event_tx = self.tx.clone();
                                 self.rt_handle.spawn(async move {
                                     match pipeline::execute_pipeline(stages, ai_tx, event_tx.clone()).await {
-                                        Ok(trace) => {
+                                        Ok(_trace) => {
                                             let _ = event_tx.send(Event {
                                                 sender: "Pipeline".to_string(),
                                                 action: "announces".to_string(),
@@ -633,7 +633,7 @@ impl eframe::App for GridApp {
                                 if !new_names.contains(tool) {
                                     let iq_level = 0.90;
                                     let age = Duration::from_secs(86400 * 365 * 5);
-                                    let (personality, memory, mood, xp, active_task) = if let Some(db_handle) = &self.db {
+                                    let (personality, memory, mood, xp, _active_task) = if let Some(db_handle) = &self.db {
                                         let db_lock = db_handle.lock().unwrap();
                                         match db_lock.get_agent_state(tool) {
                                             Ok(Some(state)) => (state.personality, state.memory, state.mood, state.xp, state.active_task),
@@ -917,7 +917,7 @@ impl eframe::App for GridApp {
                                         if !new_names.contains(tool) {
                                             let iq_level = 0.90;
                                             let age = Duration::from_secs(86400 * 365 * 5);
-                                            let (personality, memory, mood, xp, active_task) = if let Some(db_handle) = &self.db {
+                                            let (personality, memory, mood, xp, _active_task) = if let Some(db_handle) = &self.db {
                                                 let db_lock = db_handle.lock().unwrap();
                                                 match db_lock.get_agent_state(tool) {
                                                     Ok(Some(state)) => (state.personality, state.memory, state.mood, state.xp, state.active_task),
