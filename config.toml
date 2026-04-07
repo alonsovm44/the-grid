@@ -2,7 +2,7 @@ mode = "local"
 max_retries = 10
 
 [cloud]
-api_key = "api key"
+api_key = "apf_vjmm7797fwnnfop82479hh8y"
 api_url = "https://apifreellm.com/api/v1/chat"
 smart_model_id = "gpt-4o"
 dumb_model_id = "gpt-3.5-turbo"

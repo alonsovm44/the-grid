@@ -8,14 +8,14 @@ Traditional OSs rely on a User Interface (UI) where every click is a direct comm
 
 The Traditional Way: Open Terminal -> cd projects -> git init -> touch main.cpp.
 
-The Grid Way: Build a calculator.
+## The Grid Way: Build a calculator.
 The Meta-OS observes this intent and schedules "Cognitive Processes" (Agents) to resolve the delta between the current state and the desired state.
 
 2. Inference as a Finite Resource
 
 In the 1970s, CPU time was the scarcest resource. In the 2020s, Inference Cycles (LLM tokens) are the new scarcity.
 
-A Meta-OS must implement Cognitive Resource Management (CRM).
+**A Meta-OS must implement Cognitive Resource Management (CRM).**
 
 It must decide which agent deserves "high-quality" inference (GPT-4 class) versus which can run on "background" inference (TinyLlama class).
 

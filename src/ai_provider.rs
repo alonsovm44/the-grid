@@ -30,9 +30,17 @@ struct OpenAiMessage<'a> {
 }
 
 #[derive(Serialize)]
+struct OpenAiResponseFormat<'a> {
+    #[serde(rename = "type")]
+    format_type: &'a str,
+}
+
+#[derive(Serialize)]
 struct OpenAiRequest<'a> {
     model: &'a str,
     messages: Vec<OpenAiMessage<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response_format: Option<OpenAiResponseFormat<'a>>,
 }
 
 #[derive(Deserialize)]
@@ -204,13 +212,24 @@ pub async fn run_ai_engine(
                 )
             }; // The lock guard is dropped here as it goes out of scope.
 
-            let model_id = if mode == "local" {
+            // Hybrid Logic: Route based on task complexity and system mode
+            let effective_mode = if mode == "hybrid" {
+                if request.iq_level >= 0.8 || request.is_autonomous {
+                    "cloud"
+                } else {
+                    "local"
+                }
+            } else {
+                &mode
+            };
+
+            let model_id = if effective_mode == "local" {
                 &local_config.smart_model_id
             } else { // "cloud"
                 &cloud_config.smart_model_id
             };
 
-            let response_result = if mode == "local" {
+            let response_result = if effective_mode == "local" {
                 let ollama_req = OllamaRequest { model: model_id, prompt: request.prompt.clone(), stream: false, format: if request.is_json_format { Some("json") } else { None } };
                 client.post(&local_config.api_url).json(&ollama_req).send().await
             } else { // "cloud"
@@ -225,7 +244,15 @@ pub async fn run_ai_engine(
                         client.post(url).json(&google_req).send().await
                     }
                     "openai" => {
-                        let open_ai_req = OpenAiRequest { model: model_id, messages: vec![OpenAiMessage { role: "user", content: request.prompt.clone() }] };
+                        let open_ai_req = OpenAiRequest { 
+                            model: model_id, 
+                            messages: vec![OpenAiMessage { role: "user", content: request.prompt.clone() }],
+                            response_format: if request.is_json_format { 
+                                Some(OpenAiResponseFormat { format_type: "json_object" }) 
+                            } else { 
+                                None 
+                            },
+                        };
                         client.post(&cloud_config.api_url)
                             .bearer_auth(&cloud_config.api_key)
                             .json(&open_ai_req)
@@ -248,7 +275,7 @@ pub async fn run_ai_engine(
                     if response.status().is_success() {
                         let text = response.text().await.unwrap_or_default();
                         
-                        let text_result: Result<String, serde_json::Error> = if mode == "local" {
+                        let text_result: Result<String, serde_json::Error> = if effective_mode == "local" {
                             serde_json::from_str::<OllamaResponse>(&text).map(|r| r.response)
                         } else {
                             if cloud_config.protocol == "google" {
@@ -288,7 +315,13 @@ pub async fn run_ai_engine(
                                     break; // Exit retry loop
                                 }
                                 if request.is_autonomous {
-                                    let clean_json = generated_text.trim().trim_start_matches("```json").trim_end_matches("```").trim();
+                                    // Hardened JSON extraction: Find the actual object bounds to ignore cloud preamble/postamble
+                                    let clean_json = if let (Some(start), Some(end)) = (generated_text.find('{'), generated_text.rfind('}')) {
+                                        &generated_text[start..=end]
+                                    } else {
+                                        generated_text.trim().trim_start_matches("```json").trim_end_matches("```").trim()
+                                    };
+
                                     match serde_json::from_str::<AutonomousAction>(clean_json) {
                                         Ok(action) => {
                                             match action.action.as_str() {
@@ -306,7 +339,7 @@ pub async fn run_ai_engine(
                                                     if let (Some(recipient), Some(content)) = (action.recipient, action.content) {
                                                         if !recipient.is_empty() {
                                                             let dm_content = format!("@{}, {}", recipient, content);
-                                                            let _ = tx_for_ai.send(Event { sender: request.agent_name.clone(), action: "speaks".to_string(), content: dm_content });
+                                                            let _ = tx_for_ai.send(Event { sender: request.agent_name.clone(), action: "whispers".to_string(), content: dm_content });
                                                         }
                                                     }
                                                 },
@@ -323,11 +356,24 @@ pub async fn run_ai_engine(
                                                 },
                                                 "write_file" => {
                                                     if let (Some(file_name), Some(content)) = (action.file_name, action.content) {
+                                                        let line_count = content.lines().count();
                                                         match std::fs::write(&file_name, &content) {
-                                                            Ok(_) => { let _ = tx_for_ai.send(Event { sender: request.agent_name.clone(), action: "writes_file".to_string(), content: format!("Successfully wrote to {}", file_name) }); },
+                                                            Ok(_) => { 
+                                                                // Silent background system log
+                                                                let _ = tx_for_ai.send(Event { 
+                                                                    sender: "System".to_string(), 
+                                                                    action: "log".to_string(), 
+                                                                    content: format!("{} wrote {} lines to {}", request.agent_name, line_count, file_name) 
+                                                                });
+                                                                // Internal event for the agent to trigger review
+                                                                let _ = tx_for_ai.send(Event { 
+                                                                    sender: request.agent_name.clone(), 
+                                                                    action: "writes_file".to_string(), 
+                                                                    content: file_name.clone() 
+                                                                }); 
+                                                            },
                                                             Err(e) => { let _ = tx_for_ai.send(Event { sender: request.agent_name.clone(), action: "error".to_string(), content: format!("Failed to write {}: {}", file_name, e) }); }
                                                         }
-                                                        let _ = tx_for_ai.send(Event { sender: request.agent_name.clone(), action: "announces".to_string(), content: format!("has written code to '{}'", file_name) });
                                                     }
                                                 },
                                                 "read_dir" => {
@@ -348,7 +394,7 @@ pub async fn run_ai_engine(
                                                             action: "delegates_task".to_string(),
                                                             content: format!("{}|{}", recipient, content),
                                                         });
-                                                        let _ = tx_for_ai.send(Event { sender: request.agent_name.clone(), action: "speaks".to_string(), content: format!("@{}, I need you to handle this sub-task: {}", recipient, content) });
+                                                        let _ = tx_for_ai.send(Event { sender: request.agent_name.clone(), action: "whispers".to_string(), content: format!("@{}, I need you to handle this sub-task: {}", recipient, content) });
                                                     }
                                                 },
                                                 "complete_task" => {
@@ -402,14 +448,14 @@ pub async fn run_ai_engine(
                                                 }
                                             }
                                         }
-                                        Err(e) => { eprintln!("[{}] Autonomous Action LLM Error: Failed to parse JSON from {} provider: {}\nRaw Text: {}", request.agent_name, mode, e, clean_json); }
+                                        Err(e) => { eprintln!("[{}] Autonomous Action LLM Error: Failed to parse JSON from {} provider: {}\nRaw Text: {}", request.agent_name, effective_mode, e, clean_json); }
                                     }
                                 } else {
                                     let _ = tx_for_ai.send(Event { sender: request.agent_name.clone(), action: "speaks".to_string(), content: generated_text.trim().to_string() });
                                 }
                             }
                             Err(e) => {
-                                eprintln!("[{}] Error decoding JSON response from {} provider: {}. Raw response: {}", request.agent_name, mode, e, text);
+                                eprintln!("[{}] Error decoding JSON response from {} provider: {}. Raw response: {}", request.agent_name, effective_mode, e, text);
                             }
                         }
                         break; // Success, exit retry loop

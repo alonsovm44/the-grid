@@ -195,6 +195,7 @@ fn main() -> eframe::Result<()> {
                 emoji_palette,
                 show_thoughts: true,
                 show_feels: true,
+                show_secrets: false,
                 invoked_tools: HashSet::new(),
                 rel_cache: HashMap::new(),
                 last_rel_update: Instant::now(),

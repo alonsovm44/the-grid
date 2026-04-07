@@ -17,6 +17,17 @@ pub enum GridShellResult {
     ScriptReady(Vec<String>),
 }
 
+/// The "Mental State" transferred between agents in a pipeline.
+#[derive(Debug, Clone)]
+pub struct PipelineContext {
+    pub input: String,
+    pub output: String,
+    pub confidence: f32,
+    pub agent: String,
+    pub model: String,
+    pub tokens: u32,
+}
+
 #[derive(Debug, Clone)]
 pub enum GridShellCommand {
     AgentCall {
@@ -357,6 +368,57 @@ impl GridShell {
         
         Ok(GridShellResult::PipelineReady(stages))
     }
+    
+    /// Executes a semantic pipeline by chaining agent contexts.
+    /// This fulfills Milestone 2.1: capturing and injecting "Mental State".
+    pub async fn execute_pipeline(&mut self, stages: Vec<PipelineStage>) -> Result<String, String> {
+        let mut current_context = String::new();
+        let mut trace_contexts = Vec::new();
+        let total_stages = stages.len();
+
+        for (i, stage) in stages.into_iter().enumerate() {
+            let _ = self.tx.send(Event {
+                sender: "GridShell".to_string(),
+                action: "pipeline_progress".to_string(),
+                content: format!("Stage {}/{}: {}", i + 1, total_stages, stage.agent_name),
+            });
+
+            // In Milestone 2.2, we inject previous output as pre-prompt context.
+            // If this isn't the first stage, we prepend the "Mental State".
+            let prompt = if current_context.is_empty() {
+                stage.args.clone()
+            } else {
+                format!("CONTEXT FROM PREVIOUS AGENT:\n{}\n\nTASK: {}", current_context, stage.args)
+            };
+
+            // Here the system would normally call the AI Engine.
+            // For now, we simulate the capture of the "Mental State".
+            let simulated_output = format!("[Simulated output for {}]", stage.agent_name);
+            
+            let ctx = PipelineContext {
+                input: prompt,
+                output: simulated_output.clone(),
+                confidence: 0.85, // Placeholder for actual LLM confidence
+                agent: stage.agent_name.clone(),
+                model: "gpt-4-class".to_string(), // Placeholder for Tier 1 scheduling
+                tokens: 250,
+            };
+
+            current_context = ctx.output.clone();
+            trace_contexts.push(ctx);
+        }
+
+        // Update last trace for the 'trace' command
+        // Note: PipelineTrace implementation would store trace_contexts
+        
+        let _ = self.tx.send(Event {
+            sender: "GridShell".to_string(),
+            action: "pipeline_complete".to_string(),
+            content: format!("Pipeline finished with {} stages", total_stages),
+        });
+
+        Ok(current_context)
+    }
 
     fn execute_variable_assignment(&mut self, assignment: (String, ParsedAgentCall)) -> Result<String, String> {
         // In a full implementation, this would execute the command and store the result
@@ -513,7 +575,7 @@ impl GridShell {
   grid mode [local|cloud] - Switch between local (Ollama) and cloud providers
   grid export [name]   - Save the current conversation log to a file
   grid clear           - Wipe the terminal history
-  grid toggle [emojis|thoughts|feels] - Toggle UI metadata overlays
+  grid toggle [emojis|thoughts|feels|secrets] - Toggle UI metadata overlays
   
   grid start-adversarial-network [p1] -vs [p2] [arena] - Initiation combat
     Arenas: arena=light-cycles, arena=melee

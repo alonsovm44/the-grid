@@ -49,6 +49,7 @@ pub struct GridApp {
     pub emoji_palette: Vec<String>,
     pub show_thoughts: bool,
     pub show_feels: bool,
+    pub show_secrets: bool,
     pub invoked_tools: HashSet<String>,
     pub rel_cache: HashMap<String, HashMap<String, i32>>,
     pub last_rel_update: Instant,
@@ -419,6 +420,10 @@ impl eframe::App for GridApp {
                             self.show_feels = !self.show_feels;
                             let msg = if self.show_feels { "Program feelings are now visible." } else { "Program feelings are now hidden." };
                             let _ = self.tx.send(Event { sender: "System".to_string(), action: "announces".to_string(), content: msg.to_string() });
+                        } else if args == "toggle secrets" {
+                            self.show_secrets = !self.show_secrets;
+                            let msg = if self.show_secrets { "Secret transmissions are now visible." } else { "Secret transmissions are now hidden." };
+                            let _ = self.tx.send(Event { sender: "System".to_string(), action: "announces".to_string(), content: msg.to_string() });
                         } else if args.to_string().starts_with("export ") {
                             let filename_base = args.strip_prefix("export ").unwrap().trim();
                             if filename_base.is_empty() {
@@ -446,7 +451,7 @@ impl eframe::App for GridApp {
                             }
                         } else if args.starts_with("mode ") {
                             let new_mode = args.strip_prefix("mode ").unwrap().trim();
-                            if new_mode == "local" || new_mode == "cloud" {
+                            if new_mode == "local" || new_mode == "cloud" || new_mode == "hybrid" {
                                 let mut config = self.shared_config.lock().unwrap();
                                 config.mode = new_mode.to_string();
                                 let _ = self.tx.send(Event {
@@ -1017,7 +1022,24 @@ impl eframe::App for GridApp {
                     if msg.action == "feels" && !self.show_feels {
                         continue;
                     }
-                    if matches!(msg.action.as_str(), "gives_file" | "derezzes" | "jails" | "updates_relationship" | "reads" | "reads_dir" | "reads_web" | "assigned_task" | "delegates_task" | "ai_finished") {
+                    if msg.action == "whispers" && !self.show_secrets {
+                        continue;
+                    }
+                    if matches!(msg.action.as_str(), "gives_file" | "derezzes" | "jails" | "updates_relationship" | "reads" | "reads_dir" | "reads_web" | "assigned_task" | "delegates_task" | "ai_finished" | "writes_file") {
+                        continue;
+                    }
+
+                    let mut job = egui::text::LayoutJob::default();
+                    let default_font = ui.style().text_styles.get(&TextStyle::Body).unwrap().clone();
+
+                    // Special rendering for System Telemetry Logs
+                    if msg.sender == "System" && msg.action == "log" {
+                        job.append(
+                            &format!("[SYSTEM: {}]", msg.content),
+                            0.0,
+                            egui::TextFormat { font_id: default_font, color: Color32::LIGHT_GREEN, ..Default::default() }
+                        );
+                        ui.add(egui::Label::new(job).wrap(true));
                         continue;
                     }
 
@@ -1034,9 +1056,6 @@ impl eframe::App for GridApp {
                         })
                     };
 
-                    let mut job = egui::text::LayoutJob::default();
-                    let default_font = ui.style().text_styles.get(&TextStyle::Body).unwrap().clone();
-                    
                     if msg.action == "thinks" {
                         job.append(
                             &format!("[{}] thinks: ", display_name),
@@ -1047,6 +1066,17 @@ impl eframe::App for GridApp {
                             &msg.content,
                             0.0,
                             egui::TextFormat { font_id: default_font, color: Color32::GRAY, italics: true, ..Default::default() }
+                        );
+                    } else if msg.action == "whispers" {
+                        job.append(
+                            &format!("[{}] whispers: ", display_name),
+                            0.0,
+                            egui::TextFormat { font_id: default_font.clone(), color: Color32::from_rgb(150, 100, 200), italics: true, ..Default::default() }
+                        );
+                        job.append(
+                            &msg.content,
+                            0.0,
+                            egui::TextFormat { font_id: default_font, color: Color32::from_rgb(150, 100, 200), italics: true, ..Default::default() }
                         );
                     } else {
                         job.append(
