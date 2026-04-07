@@ -60,14 +60,19 @@ fn main() -> eframe::Result<()> {
     let messages_clone = messages.clone();
     let typing_agents_for_listener = typing_agents.clone();
 
+    // Compute the Grid's name from the device hostname
+    let device_name = sysinfo::System::host_name().unwrap_or_else(|| "Unknown".to_string());
+    let grid_name = format!("The {} Grid", device_name);
+
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([600.0, 500.0]),
         ..Default::default()
     };
 
+    let grid_name_for_title = grid_name.clone();
     // eframe::run_native takes over the main thread and blocks until the window closes
     eframe::run_native(
-        "The Grid",
+        &grid_name_for_title,
         options,
         Box::new(move |cc| { // This move takes ownership of variables from main
             let ctx = cc.egui_ctx.clone();
@@ -139,12 +144,12 @@ fn main() -> eframe::Result<()> {
             };
 
             // Initial agent spawning
-            let (initial_tasks, initial_names) = spawn_agents_for_directory(&current_dir, &rt_handle, tx.clone(), ai_tx.clone(), initial_db.clone());
+            let (initial_tasks, initial_names) = spawn_agents_for_directory(&current_dir, &rt_handle, tx.clone(), ai_tx.clone(), initial_db.clone(), &grid_name);
 
             let _ = tx.send(Event {
                 sender: "System".to_string(),
                 action: "announces".to_string(),
-                content: "The Grid is now online.".to_string(),
+                content: format!("{} is now online.", grid_name),
             });
 
             let user_name = whoami::username();
@@ -209,6 +214,7 @@ fn main() -> eframe::Result<()> {
                 camera_angle: 0.0,
                 gridshell: gridshell,
                 skfs: skfs,
+                grid_name: grid_name,
             })
         }),
     )

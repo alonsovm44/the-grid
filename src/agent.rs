@@ -64,6 +64,8 @@ pub struct ProgramAgent {
 
     spatial_pos: [f32; 3],
 
+    grid_name: String,
+
 }
 
 
@@ -244,7 +246,7 @@ impl ProgramAgent {
 
 
 
-    pub fn new(name: &str, personality: &str, tx: broadcast::Sender<Event>, ai_tx: mpsc::Sender<AiRequest>, memory: Vec<Event>, db: Option<Arc<Mutex<Database>>>, current_mood: String, current_dir: String, iq_level: f32, age: Duration, xp: u32) -> Self {
+    pub fn new(name: &str, personality: &str, tx: broadcast::Sender<Event>, ai_tx: mpsc::Sender<AiRequest>, memory: Vec<Event>, db: Option<Arc<Mutex<Database>>>, current_mood: String, current_dir: String, iq_level: f32, age: Duration, xp: u32, grid_name: String) -> Self {
 
         let formality = Self::calculate_formality(personality);
 
@@ -293,6 +295,8 @@ impl ProgramAgent {
             is_shushed: false,
 
             spatial_pos: [0.0, 0.0, 0.0],
+
+            grid_name,
 
         }
 
@@ -2778,6 +2782,8 @@ pub fn spawn_agents_for_directory(
 
     db: Option<Arc<Mutex<Database>>>,
 
+    grid_name: &str,
+
 ) -> (Vec<JoinHandle<()>>, Vec<String>) {
 
     let mut tasks = Vec::new();
@@ -3024,7 +3030,7 @@ pub fn spawn_agents_for_directory(
 
             
 
-            let agent = ProgramAgent::new(&agent_name, &personality, tx.clone(), ai_tx.clone(), memory, db.clone(), mood, path.to_string(), iq_level, age, xp);
+            let agent = ProgramAgent::new(&agent_name, &personality, tx.clone(), ai_tx.clone(), memory, db.clone(), mood, path.to_string(), iq_level, age, xp, grid_name.to_string());
 
             let task = rt_handle.spawn(agent.run());
 

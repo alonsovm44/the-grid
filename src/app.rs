@@ -63,6 +63,7 @@ pub struct GridApp {
     pub camera_angle: f32,
     pub gridshell: GridShell,
     pub skfs: Arc<Mutex<SpatialKnowledgeFS>>,
+    pub grid_name: String,
 }
 
 impl eframe::App for GridApp {
@@ -115,7 +116,7 @@ impl eframe::App for GridApp {
                     "DEBUG: Allocating voxel sectors in Grid 0-1...",
                     "INFO: Compiling user DNA into executable bytecode...",
                     "GRID_OS: Authorizing digitization sequence...",
-                    "VOICE_SYNTH: 'Welcome to the Grid, User.'",
+                    "VOICE_SYNTH: 'Welcome to the Grid, User.'", // boot sequence - keep static
                 ];
                 self.digitization_log.push(logs[progress % logs.len()].to_string());
                 self.digitization_state = if progress > 60 { DigitizationState::GridActive } else { DigitizationState::Digitizing(progress + 1) };
@@ -379,7 +380,8 @@ impl eframe::App for GridApp {
                                         self.agent_tasks.clear();
                                         self.agent_names.clear();
                                         self.typing_agents.lock().unwrap().clear();
-                                        let (new_tasks, new_names) = spawn_agents_for_directory(&self.current_dir, &self.rt_handle, self.tx.clone(), self.ai_tx.clone(), self.db.clone());
+
+                                        let (new_tasks, new_names) = spawn_agents_for_directory(&self.current_dir, &self.rt_handle, self.tx.clone(), self.ai_tx.clone(), self.db.clone(), &self.grid_name);
                                         self.agent_tasks = new_tasks;
                                         self.agent_names = new_names;
                                     }
@@ -478,7 +480,7 @@ impl eframe::App for GridApp {
                                 content: agent_list,
                             });
                         } else if args == "status" {
-                            let mut output = String::from("=== THE GRID STATUS ===\n");
+                            let mut output = format!("=== {} STATUS ===\n", self.grid_name.to_uppercase());
                             let config = self.shared_config.lock().unwrap();
                             output.push_str(&format!("AI Mode: {}\n", config.mode));
 
@@ -594,6 +596,7 @@ impl eframe::App for GridApp {
                                         bp_iq,
                                         age,
                                         xp,
+                                        self.grid_name.clone(),
                                     );
 
                                     let task = self.rt_handle.spawn(agent.run());
@@ -604,42 +607,7 @@ impl eframe::App for GridApp {
                             }
 
                             if invoked_count > 0 {
-                                let _ = self.tx.send(Event { sender: "System".to_string(), action: "announces".to_string(), content: format!("Invoked {} tools into The Grid.", invoked_count) });
-                            }
-                        } else if args.starts_with("revoke ") {
-                            let progs_str = args.strip_prefix("revoke ").unwrap().trim();
-                            let progs: Vec<&str> = progs_str.split_whitespace().collect();
-                            let mut revoked_count = 0;
-                            for prog in progs {
-                                let agent_name: String = prog.to_string();
-                                if let Some(idx) = self.agent_names.iter().position(|n| n.to_lowercase() == agent_name.to_lowercase()) {
-                                    let name = self.agent_names.remove(idx);
-                                    let task = self.agent_tasks.remove(idx);
-                                    task.abort();
-                                    let _ = self.tx.send(Event {
-                                        sender: "System".to_string(),
-                                        action: "derezzes".to_string(),
-                                        content: name.clone(),
-                                    });
-                                    revoked_count += 1;
-                                }
-                            }
-
-                            if revoked_count > 0 {
-                                let _ = self.tx.send(Event { sender: "System".to_string(), action: "announces".to_string(), content: format!("Revoked {} tools from The Grid.", revoked_count) });
-                            } else {
-                                let _ = self.tx.send(Event { sender: "System".to_string(), action: "error".to_string(), content: "No matching invoked tools found to revoke.".to_string() });
-                            }
-                        } else if args.starts_with("build ") {
-                            let target = args.strip_prefix("build ").unwrap().trim();
-                            if self.agent_names.is_empty() {
-                                let _ = self.tx.send(Event { sender: "System".to_string(), action: "error".to_string(), content: "No programs available to orchestrate the build. Invoke some first.".to_string() });
-                            } else {
-                                // Designate the last invoked program (or the only one present) as the Project Lead
-                                let lead = self.agent_names.last().unwrap().clone();
-                                let task_desc = format!("Read the file '{}', thoroughly understand the project requirements, and orchestrate the full build process by heavily delegating sub-tasks to the other available programs.", target);
-                                let _ = self.tx.send(Event { sender: "System".to_string(), action: "assigned_task".to_string(), content: format!("{}|{}", lead, task_desc) });
-                                let _ = self.tx.send(Event { sender: "System".to_string(), action: "announces".to_string(), content: format!("Initiated build sequence for '{}'. Project Lead: {}", target, lead) });
+                                let _ = self.tx.send(Event { sender: "System".to_string(), action: "announces".to_string(), content: format!("Invoked {} tools into {}.", invoked_count, self.grid_name) });
                             }
                         } else if args == "reload" {
                             let _ = self.tx.send(Event { sender: "System".to_string(), action: "announces".to_string(), content: "Reloading programs in current directory...".to_string() });
@@ -657,7 +625,7 @@ impl eframe::App for GridApp {
                             self.agent_names.clear();
                             self.typing_agents.lock().unwrap().clear();
 
-                            let (mut new_tasks, mut new_names) = spawn_agents_for_directory(&self.current_dir, &self.rt_handle, self.tx.clone(), self.ai_tx.clone(), self.db.clone());
+                            let (mut new_tasks, mut new_names) = spawn_agents_for_directory(&self.current_dir, &self.rt_handle, self.tx.clone(), self.ai_tx.clone(), self.db.clone(), &self.grid_name);
                             
                             // Re-invoke global tools!
                             let mut re_invoked = 0;
@@ -675,7 +643,7 @@ impl eframe::App for GridApp {
                                         (generate_procedural_personality(tool), Vec::new(), ProgramAgent::random_mood(), 0, None)
                                     };
                                     
-                                    let agent = ProgramAgent::new(tool, &personality, self.tx.clone(), self.ai_tx.clone(), memory, self.db.clone(), mood, self.current_dir.clone(), iq_level, age, xp);
+                                    let agent = ProgramAgent::new(tool, &personality, self.tx.clone(), self.ai_tx.clone(), memory, self.db.clone(), mood, self.current_dir.clone(), iq_level, age, xp, self.grid_name.clone());
                                     let task = self.rt_handle.spawn(agent.run());
                                     new_tasks.push(task);
                                     new_names.push(tool.clone());
@@ -892,7 +860,7 @@ impl eframe::App for GridApp {
                                 let arena = parts[4];
                                 
                                 if !self.agent_names.iter().any(|n| n.eq_ignore_ascii_case(&p1)) || !self.agent_names.iter().any(|n| n.eq_ignore_ascii_case(&p2)) {
-                                    let _ = self.tx.send(Event { sender: "System".to_string(), action: "error".to_string(), content: "Both programs must be active on The Grid to fight.".to_string() });
+                                    let _ = self.tx.send(Event { sender: "System".to_string(), action: "error".to_string(), content: format!("Both programs must be active on {} to fight.", self.grid_name) });
                                 } else if arena == "arena=light-cycles" || arena == "arena=lightcycles" {
                                     let tx_clone = self.tx.clone();
                                     self.rt_handle.spawn(async move {
@@ -941,7 +909,7 @@ impl eframe::App for GridApp {
 
                                     // Spawn new agents
                                     let _ = self.tx.send(Event { sender: "System".to_string(), action: "announces".to_string(), content: format!("Scanning {} for new agents...", self.current_dir) });
-                                    let (mut new_tasks, mut new_names) = spawn_agents_for_directory(&self.current_dir, &self.rt_handle, self.tx.clone(), self.ai_tx.clone(), self.db.clone());
+                                    let (mut new_tasks, mut new_names) = spawn_agents_for_directory(&self.current_dir, &self.rt_handle, self.tx.clone(), self.ai_tx.clone(), self.db.clone(), &self.grid_name);
                                     
                                     // Carry over global tools to the new directory!
                                     let mut re_invoked = 0;
@@ -958,7 +926,7 @@ impl eframe::App for GridApp {
                                             } else {
                                                 (generate_procedural_personality(tool), Vec::new(), ProgramAgent::random_mood(), 0, None)
                                             };
-                                        let agent = ProgramAgent::new(tool, &personality, self.tx.clone(), self.ai_tx.clone(), memory, self.db.clone(), mood, self.current_dir.clone(), iq_level, age, xp);
+                                        let agent = ProgramAgent::new(tool, &personality, self.tx.clone(), self.ai_tx.clone(), memory, self.db.clone(), mood, self.current_dir.clone(), iq_level, age, xp, self.grid_name.clone());
                                             let task = self.rt_handle.spawn(agent.run());
                                             new_tasks.push(task);
                                             new_names.push(tool.clone());
@@ -996,7 +964,7 @@ impl eframe::App for GridApp {
 
     // If Grid is Active, render the 3D Voxel World in a separate Window
     if self.digitization_state == DigitizationState::GridActive {
-        egui::Window::new("The Grid - 3D Sector")
+        egui::Window::new(format!("{} - 3D Sector", self.grid_name))
             .default_size([600.0, 400.0])
             .collapsible(true)
             .show(ctx, |ui| {
@@ -1098,7 +1066,7 @@ impl eframe::App for GridApp {
         // The Grid - Sector Map Visualization
         let mut is_map_open = self.show_map;
         if is_map_open {
-            egui::Window::new("The Grid - Sector Map")
+            egui::Window::new(format!("{} - Sector Map", self.grid_name))
                 .collapsible(false)
                 .resizable(true)
                 .default_size([800.0, 600.0])
